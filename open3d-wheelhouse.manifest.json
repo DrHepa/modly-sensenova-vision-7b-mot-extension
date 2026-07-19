@@ -1,0 +1,49 @@
+{
+  "schema_version": "sensenova-open3d-wheelhouse/v1",
+  "extension_id": "sensenova-vision-7b-mot",
+  "wheelhouse_version": "0.1.0",
+  "reused_from": {
+    "extension": "modly-hy-world-2-extension",
+    "manifest": "open3d-wheelhouse.manifest.json",
+    "asset_sha256": "6dede879da0848d1dacc62bf2f2015ab3623f867630f099b52c2d21aca88cca8"
+  },
+  "source": {
+    "project": "Open3D",
+    "repository": "https://github.com/isl-org/Open3D.git",
+    "ref": "v0.19.0",
+    "license": "MIT",
+    "build_target": "openblas-arm64-py312",
+    "cmake_options": [
+      "-DBUILD_SHARED_LIBS=ON",
+      "-DBUILD_UNIT_TESTS=OFF",
+      "-DBUILD_EXAMPLES=OFF",
+      "-DBUILD_GUI=OFF",
+      "-DWITH_OPENMP=OFF",
+      "-DCMAKE_C_FLAGS=-ftls-model=global-dynamic",
+      "-DCMAKE_CXX_FLAGS=-ftls-model=global-dynamic"
+    ]
+  },
+  "runtime_env": {
+    "GLIBC_TUNABLES": "glibc.rtld.optional_static_tls=262144",
+    "import_order": [
+      "open3d",
+      "torch"
+    ]
+  },
+  "assets": [
+    {
+      "id": "open3d-0.19.0-linux-aarch64-cp312-openblas",
+      "package": "open3d",
+      "version": "0.19.0",
+      "filename": "wheels/open3d/open3d-0.19.0-cp312-cp312-manylinux_2_31_aarch64.whl",
+      "size_bytes": 17360015,
+      "sha256": "6dede879da0848d1dacc62bf2f2015ab3623f867630f099b52c2d21aca88cca8",
+      "selectors": {
+        "os": "linux",
+        "arch": "aarch64",
+        "python_tag": "cp312",
+        "accelerator_lane": "openblas-cpu"
+      }
+    }
+  ]
+}

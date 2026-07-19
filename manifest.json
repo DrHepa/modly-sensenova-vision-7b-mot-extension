@@ -1,0 +1,1876 @@
+{
+  "id": "sensenova-vision-7b-mot",
+  "kind": "model",
+  "type": "model",
+  "name": "SenseNova Vision 7B MoT",
+  "displayName": "SenseNova Vision 7B MoT",
+  "version": "0.2.1",
+  "description": "Offline Modly adapter for the complete pinned SenseNova-Vision-7B-MoT inference surface: generation, editing, understanding, dense perception, segmentation, detection, OCR, point-cloud reconstruction, and camera pose.",
+  "source": "https://github.com/DrHepa/modly-sensenova-vision-7b-mot-extension",
+  "author": "DrHepa",
+  "license": {
+    "wrapper": "MIT",
+    "upstream_code": "Apache-2.0",
+    "model_weights": "CC BY-NC 4.0; non-commercial use only",
+    "open3d_wheel": "MIT",
+    "flash_attn_wheel": "BSD-3-Clause"
+  },
+  "generator_class": "SenseNovaVisionGenerator",
+  "vram_gb": 40,
+  "recommended_vram_gb": 48,
+  "tags": [
+    "vision",
+    "image-generation",
+    "image-editing",
+    "segmentation",
+    "text-output",
+    "point-cloud",
+    "camera-pose",
+    "cuda",
+    "bfloat16",
+    "non-commercial-weights",
+    "depth",
+    "surface-normals",
+    "panoptic-segmentation",
+    "object-detection",
+    "keypoints",
+    "ocr"
+  ],
+  "runtime": {
+    "device": "cuda",
+    "dtype": "bfloat16",
+    "offline_assets_only": true,
+    "platform_lane": "linux-aarch64/cp312/cu128/torch2.7.0/sm121",
+    "shared_process": true
+  },
+  "upstream": {
+    "repository": "https://github.com/OpenSenseNova/SenseNova-Vision",
+    "commit": "beea1f771b8192c597085c0e668f4430d2089d8d",
+    "huggingface_repository": "sensenova/SenseNova-Vision-7B-MoT",
+    "huggingface_revision": "79548fcc5b954598799b9317f8d3ec5e347d5c0e"
+  },
+  "setup": {
+    "classification": "model-managed-setup",
+    "argv_contract": {
+      "electron": "setup.py '{\"python_exe\":\"...\",\"ext_dir\":\"...\",\"gpu_sm\":121,\"cuda_version\":128}'",
+      "legacy": "setup.py <python_exe> <ext_dir> <gpu_sm> [cuda_version]"
+    },
+    "downloads_weights": false,
+    "weights_managed_by": "modly-ui/downloader",
+    "flash_attn_policy": "verified-local-wheel-only-no-source-build",
+    "evidence": {
+      "status_path": ".modly/setup/setup-status.json",
+      "log_path": ".modly/setup/logs/setup.log"
+    },
+    "flash_attn_runtime_adaptation": {
+      "official_upstream_reference": "2.6.3",
+      "selected_verified_wheel": "2.7.3",
+      "torch": "2.7.0+cu128",
+      "cuda": "12.8",
+      "gpu_sm": 121
+    }
+  },
+  "docs": {
+    "readme": "./README.md",
+    "third_party_notices": "./THIRD_PARTY_NOTICES.md",
+    "vendored_source_provenance": "./vendor/opensensenova_sensenova_vision/PROVENANCE.json"
+  },
+  "nodes": [
+    {
+      "type": "model.generate",
+      "weight_owner_id": "shared",
+      "process_owner_id": "shared",
+      "hf_repo": "sensenova/SenseNova-Vision-7B-MoT",
+      "download_check": "checkpoint/ema.safetensors",
+      "hf_downloads": [
+        {
+          "repo_id": "sensenova/SenseNova-Vision-7B-MoT",
+          "revision": "79548fcc5b954598799b9317f8d3ec5e347d5c0e",
+          "target_subdir": "checkpoint",
+          "files": [
+            {
+              "path": "ae.safetensors",
+              "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+            },
+            {
+              "path": "ema.safetensors",
+              "sha256": "96f29abd98791288c5a24087322e964bb9bcabfc2f185ece71543f827bc2b11e"
+            },
+            {
+              "path": "config.json"
+            },
+            {
+              "path": "generation_config.json"
+            },
+            {
+              "path": "llm_config.json"
+            },
+            {
+              "path": "vit_config.json"
+            },
+            {
+              "path": "tokenizer_config.json"
+            },
+            {
+              "path": "tokenizer.json"
+            },
+            {
+              "path": "merges.txt"
+            },
+            {
+              "path": "vocab.json"
+            }
+          ]
+        }
+      ],
+      "id": "open-image-generation",
+      "name": "SenseNova Open Image Generation",
+      "capability_id": "text-to-image",
+      "description": "Generate one PNG from a text prompt with the official generate mode.",
+      "input": "none",
+      "output": "image",
+      "params_schema": [
+        {
+          "id": "prompt",
+          "label": "Prompt",
+          "type": "string",
+          "default": "",
+          "required": true,
+          "tooltip": "Required SenseNova instruction."
+        },
+        {
+          "id": "seed",
+          "label": "Seed",
+          "type": "int",
+          "default": 42,
+          "min": -1,
+          "max": 2147483647,
+          "required": false,
+          "tooltip": "Upstream noise seed. Use -1 to leave the current random state unchanged."
+        },
+        {
+          "id": "num_timesteps",
+          "label": "Diffusion Steps",
+          "type": "int",
+          "default": 50,
+          "min": 1,
+          "max": 100,
+          "required": false,
+          "tooltip": "Overrides the official 50-step default for image or point-map decoding."
+        },
+        {
+          "id": "cfg_text_scale",
+          "label": "Text Guidance",
+          "type": "float",
+          "default": 4.0,
+          "min": 0.0,
+          "max": 20.0,
+          "step": 0.1,
+          "required": false,
+          "tooltip": "Official classifier-free text guidance scale."
+        },
+        {
+          "id": "cfg_img_scale",
+          "label": "Image Guidance",
+          "type": "float",
+          "default": 1.0,
+          "min": 0.0,
+          "max": 20.0,
+          "step": 0.1,
+          "required": false,
+          "tooltip": "Official classifier-free image guidance scale for this mode."
+        },
+        {
+          "id": "reasoning_mode",
+          "label": "Reasoning Mode",
+          "type": "boolean",
+          "default": false,
+          "required": false,
+          "tooltip": "Use the official low-level think mode. Image nodes may emit optional raw reasoning text."
+        }
+      ]
+    },
+    {
+      "type": "model.generate",
+      "weight_owner_id": "shared",
+      "process_owner_id": "shared",
+      "hf_repo": "sensenova/SenseNova-Vision-7B-MoT",
+      "download_check": "checkpoint/ema.safetensors",
+      "hf_downloads": [
+        {
+          "repo_id": "sensenova/SenseNova-Vision-7B-MoT",
+          "revision": "79548fcc5b954598799b9317f8d3ec5e347d5c0e",
+          "target_subdir": "checkpoint",
+          "files": [
+            {
+              "path": "ae.safetensors",
+              "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+            },
+            {
+              "path": "ema.safetensors",
+              "sha256": "96f29abd98791288c5a24087322e964bb9bcabfc2f185ece71543f827bc2b11e"
+            },
+            {
+              "path": "config.json"
+            },
+            {
+              "path": "generation_config.json"
+            },
+            {
+              "path": "llm_config.json"
+            },
+            {
+              "path": "vit_config.json"
+            },
+            {
+              "path": "tokenizer_config.json"
+            },
+            {
+              "path": "tokenizer.json"
+            },
+            {
+              "path": "merges.txt"
+            },
+            {
+              "path": "vocab.json"
+            }
+          ]
+        }
+      ],
+      "id": "image-to-image-vision",
+      "name": "SenseNova Image Editing",
+      "capability_id": "image-to-image",
+      "description": "Edit one image from a text instruction with the official edit mode.",
+      "input": "image",
+      "output": "image",
+      "params_schema": [
+        {
+          "id": "prompt",
+          "label": "Prompt",
+          "type": "string",
+          "default": "",
+          "required": true,
+          "tooltip": "Required SenseNova instruction."
+        },
+        {
+          "id": "seed",
+          "label": "Seed",
+          "type": "int",
+          "default": 42,
+          "min": -1,
+          "max": 2147483647,
+          "required": false,
+          "tooltip": "Upstream noise seed. Use -1 to leave the current random state unchanged."
+        },
+        {
+          "id": "num_timesteps",
+          "label": "Diffusion Steps",
+          "type": "int",
+          "default": 50,
+          "min": 1,
+          "max": 100,
+          "required": false,
+          "tooltip": "Overrides the official 50-step default for image or point-map decoding."
+        },
+        {
+          "id": "cfg_text_scale",
+          "label": "Text Guidance",
+          "type": "float",
+          "default": 4.0,
+          "min": 0.0,
+          "max": 20.0,
+          "step": 0.1,
+          "required": false,
+          "tooltip": "Official classifier-free text guidance scale."
+        },
+        {
+          "id": "cfg_img_scale",
+          "label": "Image Guidance",
+          "type": "float",
+          "default": 2.0,
+          "min": 0.0,
+          "max": 20.0,
+          "step": 0.1,
+          "required": false,
+          "tooltip": "Official classifier-free image guidance scale for this mode."
+        },
+        {
+          "id": "reasoning_mode",
+          "label": "Reasoning Mode",
+          "type": "boolean",
+          "default": false,
+          "required": false,
+          "tooltip": "Use the official low-level think mode. Image nodes may emit optional raw reasoning text."
+        }
+      ]
+    },
+    {
+      "type": "model.generate",
+      "weight_owner_id": "shared",
+      "process_owner_id": "shared",
+      "hf_repo": "sensenova/SenseNova-Vision-7B-MoT",
+      "download_check": "checkpoint/ema.safetensors",
+      "hf_downloads": [
+        {
+          "repo_id": "sensenova/SenseNova-Vision-7B-MoT",
+          "revision": "79548fcc5b954598799b9317f8d3ec5e347d5c0e",
+          "target_subdir": "checkpoint",
+          "files": [
+            {
+              "path": "ae.safetensors",
+              "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+            },
+            {
+              "path": "ema.safetensors",
+              "sha256": "96f29abd98791288c5a24087322e964bb9bcabfc2f185ece71543f827bc2b11e"
+            },
+            {
+              "path": "config.json"
+            },
+            {
+              "path": "generation_config.json"
+            },
+            {
+              "path": "llm_config.json"
+            },
+            {
+              "path": "vit_config.json"
+            },
+            {
+              "path": "tokenizer_config.json"
+            },
+            {
+              "path": "tokenizer.json"
+            },
+            {
+              "path": "merges.txt"
+            },
+            {
+              "path": "vocab.json"
+            }
+          ]
+        }
+      ],
+      "id": "visual-prompt-segmentation",
+      "name": "SenseNova Visual-Prompt Segmentation",
+      "capability_id": "visual-prompt-segmentation",
+      "description": "Segment a fixed scene using a second visual prompt image and the exact official interactive-segmentation prompt.",
+      "input": "image",
+      "output": "image",
+      "params_schema": [
+        {
+          "id": "seed",
+          "label": "Seed",
+          "type": "int",
+          "default": 42,
+          "min": -1,
+          "max": 2147483647,
+          "required": false,
+          "tooltip": "Upstream noise seed. Use -1 to leave the current random state unchanged."
+        },
+        {
+          "id": "num_timesteps",
+          "label": "Diffusion Steps",
+          "type": "int",
+          "default": 50,
+          "min": 1,
+          "max": 100,
+          "required": false,
+          "tooltip": "Overrides the official 50-step default for image or point-map decoding."
+        },
+        {
+          "id": "cfg_text_scale",
+          "label": "Text Guidance",
+          "type": "float",
+          "default": 4.0,
+          "min": 0.0,
+          "max": 20.0,
+          "step": 0.1,
+          "required": false,
+          "tooltip": "Official classifier-free text guidance scale."
+        },
+        {
+          "id": "cfg_img_scale",
+          "label": "Image Guidance",
+          "type": "float",
+          "default": 1.0,
+          "min": 0.0,
+          "max": 20.0,
+          "step": 0.1,
+          "required": false,
+          "tooltip": "Official classifier-free image guidance scale for this mode."
+        },
+        {
+          "id": "prompt_image_path",
+          "label": "Visual Prompt Image",
+          "type": "string",
+          "default": "",
+          "required": true,
+          "pickerIntent": "image",
+          "filters": [
+            {
+              "name": "Image files",
+              "extensions": [
+                "png",
+                "jpg",
+                "jpeg",
+                "webp"
+              ]
+            }
+          ],
+          "tooltip": "Select the second image that defines the visual prompt. The connected primary image is the scene to segment."
+        }
+      ]
+    },
+    {
+      "type": "model.generate",
+      "weight_owner_id": "shared",
+      "process_owner_id": "shared",
+      "hf_repo": "sensenova/SenseNova-Vision-7B-MoT",
+      "download_check": "checkpoint/ema.safetensors",
+      "hf_downloads": [
+        {
+          "repo_id": "sensenova/SenseNova-Vision-7B-MoT",
+          "revision": "79548fcc5b954598799b9317f8d3ec5e347d5c0e",
+          "target_subdir": "checkpoint",
+          "files": [
+            {
+              "path": "ae.safetensors",
+              "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+            },
+            {
+              "path": "ema.safetensors",
+              "sha256": "96f29abd98791288c5a24087322e964bb9bcabfc2f185ece71543f827bc2b11e"
+            },
+            {
+              "path": "config.json"
+            },
+            {
+              "path": "generation_config.json"
+            },
+            {
+              "path": "llm_config.json"
+            },
+            {
+              "path": "vit_config.json"
+            },
+            {
+              "path": "tokenizer_config.json"
+            },
+            {
+              "path": "tokenizer.json"
+            },
+            {
+              "path": "merges.txt"
+            },
+            {
+              "path": "vocab.json"
+            }
+          ]
+        }
+      ],
+      "id": "captioned-segmentation",
+      "name": "SenseNova Captioned Segmentation",
+      "capability_id": "captioned-segmentation",
+      "description": "Return the official grounded-caption segmentation PNG and its raw tagged caption as separate named outputs.",
+      "input": "image",
+      "output": "image",
+      "params_schema": [
+        {
+          "id": "seed",
+          "label": "Seed",
+          "type": "int",
+          "default": 42,
+          "min": -1,
+          "max": 2147483647,
+          "required": false,
+          "tooltip": "Upstream noise seed. Use -1 to leave the current random state unchanged."
+        },
+        {
+          "id": "num_timesteps",
+          "label": "Diffusion Steps",
+          "type": "int",
+          "default": 50,
+          "min": 1,
+          "max": 100,
+          "required": false,
+          "tooltip": "Overrides the official 50-step default for image or point-map decoding."
+        },
+        {
+          "id": "cfg_text_scale",
+          "label": "Text Guidance",
+          "type": "float",
+          "default": 4.0,
+          "min": 0.0,
+          "max": 20.0,
+          "step": 0.1,
+          "required": false,
+          "tooltip": "Official classifier-free text guidance scale."
+        },
+        {
+          "id": "cfg_img_scale",
+          "label": "Image Guidance",
+          "type": "float",
+          "default": 1.0,
+          "min": 0.0,
+          "max": 20.0,
+          "step": 0.1,
+          "required": false,
+          "tooltip": "Official classifier-free image guidance scale for this mode."
+        }
+      ]
+    },
+    {
+      "type": "model.generate",
+      "weight_owner_id": "shared",
+      "process_owner_id": "shared",
+      "hf_repo": "sensenova/SenseNova-Vision-7B-MoT",
+      "download_check": "checkpoint/ema.safetensors",
+      "hf_downloads": [
+        {
+          "repo_id": "sensenova/SenseNova-Vision-7B-MoT",
+          "revision": "79548fcc5b954598799b9317f8d3ec5e347d5c0e",
+          "target_subdir": "checkpoint",
+          "files": [
+            {
+              "path": "ae.safetensors",
+              "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+            },
+            {
+              "path": "ema.safetensors",
+              "sha256": "96f29abd98791288c5a24087322e964bb9bcabfc2f185ece71543f827bc2b11e"
+            },
+            {
+              "path": "config.json"
+            },
+            {
+              "path": "generation_config.json"
+            },
+            {
+              "path": "llm_config.json"
+            },
+            {
+              "path": "vit_config.json"
+            },
+            {
+              "path": "tokenizer_config.json"
+            },
+            {
+              "path": "tokenizer.json"
+            },
+            {
+              "path": "merges.txt"
+            },
+            {
+              "path": "vocab.json"
+            }
+          ]
+        }
+      ],
+      "id": "structured-vision",
+      "name": "SenseNova Structured Vision",
+      "capability_id": "image-to-structured-text",
+      "description": "Return the unmodified upstream tagged understanding text; an optional JSON resource wraps the raw response without semantic parsing.",
+      "input": "image",
+      "output": "text",
+      "params_schema": [
+        {
+          "id": "prompt",
+          "label": "Instruction",
+          "type": "string",
+          "default": "",
+          "required": true,
+          "tooltip": "Required visual-understanding instruction. Upstream tags are returned unchanged."
+        },
+        {
+          "id": "seed",
+          "label": "Seed",
+          "type": "int",
+          "default": 42,
+          "min": -1,
+          "max": 2147483647,
+          "required": false,
+          "tooltip": "Upstream noise seed. Use -1 to leave the current random state unchanged."
+        },
+        {
+          "id": "include_json_resource",
+          "label": "Attach Raw JSON Resource",
+          "type": "boolean",
+          "default": true,
+          "required": false,
+          "tooltip": "Attach a JSON envelope containing prompt, mode, and untouched raw text. No model semantics are parsed or invented."
+        },
+        {
+          "id": "reasoning_mode",
+          "label": "Reasoning Mode",
+          "type": "boolean",
+          "default": false,
+          "required": false,
+          "tooltip": "Use the official low-level think mode. Image nodes may emit optional raw reasoning text."
+        }
+      ]
+    },
+    {
+      "type": "model.generate",
+      "weight_owner_id": "shared",
+      "process_owner_id": "shared",
+      "hf_repo": "sensenova/SenseNova-Vision-7B-MoT",
+      "download_check": "checkpoint/ema.safetensors",
+      "hf_downloads": [
+        {
+          "repo_id": "sensenova/SenseNova-Vision-7B-MoT",
+          "revision": "79548fcc5b954598799b9317f8d3ec5e347d5c0e",
+          "target_subdir": "checkpoint",
+          "files": [
+            {
+              "path": "ae.safetensors",
+              "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+            },
+            {
+              "path": "ema.safetensors",
+              "sha256": "96f29abd98791288c5a24087322e964bb9bcabfc2f185ece71543f827bc2b11e"
+            },
+            {
+              "path": "config.json"
+            },
+            {
+              "path": "generation_config.json"
+            },
+            {
+              "path": "llm_config.json"
+            },
+            {
+              "path": "vit_config.json"
+            },
+            {
+              "path": "tokenizer_config.json"
+            },
+            {
+              "path": "tokenizer.json"
+            },
+            {
+              "path": "merges.txt"
+            },
+            {
+              "path": "vocab.json"
+            }
+          ]
+        }
+      ],
+      "id": "multi-view-reconstruction",
+      "name": "SenseNova Multi-View Point Cloud",
+      "capability_id": "multi-view-to-point-cloud",
+      "description": "Reconstruct one to ten ordered views with the official reconstruct_3d path and return a GLB containing POINTS plus aligned NPY point maps.",
+      "input": "image",
+      "output": "mesh",
+      "output_formats": [
+        "glb",
+        "npy"
+      ],
+      "params_schema": [
+        {
+          "id": "seed",
+          "label": "Seed",
+          "type": "int",
+          "default": 42,
+          "min": -1,
+          "max": 2147483647,
+          "required": false,
+          "tooltip": "Upstream noise seed. Use -1 to leave the current random state unchanged."
+        },
+        {
+          "id": "num_timesteps",
+          "label": "Diffusion Steps",
+          "type": "int",
+          "default": 50,
+          "min": 1,
+          "max": 100,
+          "required": false,
+          "tooltip": "Overrides the official 50-step default for image or point-map decoding."
+        },
+        {
+          "id": "mask_edge",
+          "label": "Filter Normal Edges",
+          "type": "boolean",
+          "default": true,
+          "required": false,
+          "tooltip": "Use the official normal-edge mask before point-cloud outlier filtering."
+        },
+        {
+          "id": "mask_black_bg",
+          "label": "Remove Black Background",
+          "type": "boolean",
+          "default": false,
+          "required": false,
+          "tooltip": "Use the official black-background color mask."
+        },
+        {
+          "id": "mask_white_bg",
+          "label": "Remove White Background",
+          "type": "boolean",
+          "default": false,
+          "required": false,
+          "tooltip": "Use the official white-background color mask."
+        },
+        {
+          "id": "view_2_image_path",
+          "label": "View 2 Image",
+          "type": "string",
+          "default": "",
+          "required": false,
+          "pickerIntent": "image",
+          "filters": [
+            {
+              "name": "Image files",
+              "extensions": [
+                "png",
+                "jpg",
+                "jpeg",
+                "webp"
+              ]
+            }
+          ],
+          "tooltip": "Select optional ordered reconstruction view 2. View 1 is the connected primary image; fill every preceding view path first."
+        },
+        {
+          "id": "view_3_image_path",
+          "label": "View 3 Image",
+          "type": "string",
+          "default": "",
+          "required": false,
+          "pickerIntent": "image",
+          "filters": [
+            {
+              "name": "Image files",
+              "extensions": [
+                "png",
+                "jpg",
+                "jpeg",
+                "webp"
+              ]
+            }
+          ],
+          "tooltip": "Select optional ordered reconstruction view 3. View 1 is the connected primary image; fill every preceding view path first."
+        },
+        {
+          "id": "view_4_image_path",
+          "label": "View 4 Image",
+          "type": "string",
+          "default": "",
+          "required": false,
+          "pickerIntent": "image",
+          "filters": [
+            {
+              "name": "Image files",
+              "extensions": [
+                "png",
+                "jpg",
+                "jpeg",
+                "webp"
+              ]
+            }
+          ],
+          "tooltip": "Select optional ordered reconstruction view 4. View 1 is the connected primary image; fill every preceding view path first."
+        },
+        {
+          "id": "view_5_image_path",
+          "label": "View 5 Image",
+          "type": "string",
+          "default": "",
+          "required": false,
+          "pickerIntent": "image",
+          "filters": [
+            {
+              "name": "Image files",
+              "extensions": [
+                "png",
+                "jpg",
+                "jpeg",
+                "webp"
+              ]
+            }
+          ],
+          "tooltip": "Select optional ordered reconstruction view 5. View 1 is the connected primary image; fill every preceding view path first."
+        },
+        {
+          "id": "view_6_image_path",
+          "label": "View 6 Image",
+          "type": "string",
+          "default": "",
+          "required": false,
+          "pickerIntent": "image",
+          "filters": [
+            {
+              "name": "Image files",
+              "extensions": [
+                "png",
+                "jpg",
+                "jpeg",
+                "webp"
+              ]
+            }
+          ],
+          "tooltip": "Select optional ordered reconstruction view 6. View 1 is the connected primary image; fill every preceding view path first."
+        },
+        {
+          "id": "view_7_image_path",
+          "label": "View 7 Image",
+          "type": "string",
+          "default": "",
+          "required": false,
+          "pickerIntent": "image",
+          "filters": [
+            {
+              "name": "Image files",
+              "extensions": [
+                "png",
+                "jpg",
+                "jpeg",
+                "webp"
+              ]
+            }
+          ],
+          "tooltip": "Select optional ordered reconstruction view 7. View 1 is the connected primary image; fill every preceding view path first."
+        },
+        {
+          "id": "view_8_image_path",
+          "label": "View 8 Image",
+          "type": "string",
+          "default": "",
+          "required": false,
+          "pickerIntent": "image",
+          "filters": [
+            {
+              "name": "Image files",
+              "extensions": [
+                "png",
+                "jpg",
+                "jpeg",
+                "webp"
+              ]
+            }
+          ],
+          "tooltip": "Select optional ordered reconstruction view 8. View 1 is the connected primary image; fill every preceding view path first."
+        },
+        {
+          "id": "view_9_image_path",
+          "label": "View 9 Image",
+          "type": "string",
+          "default": "",
+          "required": false,
+          "pickerIntent": "image",
+          "filters": [
+            {
+              "name": "Image files",
+              "extensions": [
+                "png",
+                "jpg",
+                "jpeg",
+                "webp"
+              ]
+            }
+          ],
+          "tooltip": "Select optional ordered reconstruction view 9. View 1 is the connected primary image; fill every preceding view path first."
+        },
+        {
+          "id": "view_10_image_path",
+          "label": "View 10 Image",
+          "type": "string",
+          "default": "",
+          "required": false,
+          "pickerIntent": "image",
+          "filters": [
+            {
+              "name": "Image files",
+              "extensions": [
+                "png",
+                "jpg",
+                "jpeg",
+                "webp"
+              ]
+            }
+          ],
+          "tooltip": "Select optional ordered reconstruction view 10. View 1 is the connected primary image; fill every preceding view path first."
+        }
+      ]
+    },
+    {
+      "type": "model.generate",
+      "weight_owner_id": "shared",
+      "process_owner_id": "shared",
+      "hf_repo": "sensenova/SenseNova-Vision-7B-MoT",
+      "download_check": "checkpoint/ema.safetensors",
+      "hf_downloads": [
+        {
+          "repo_id": "sensenova/SenseNova-Vision-7B-MoT",
+          "revision": "79548fcc5b954598799b9317f8d3ec5e347d5c0e",
+          "target_subdir": "checkpoint",
+          "files": [
+            {
+              "path": "ae.safetensors",
+              "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+            },
+            {
+              "path": "ema.safetensors",
+              "sha256": "96f29abd98791288c5a24087322e964bb9bcabfc2f185ece71543f827bc2b11e"
+            },
+            {
+              "path": "config.json"
+            },
+            {
+              "path": "generation_config.json"
+            },
+            {
+              "path": "llm_config.json"
+            },
+            {
+              "path": "vit_config.json"
+            },
+            {
+              "path": "tokenizer_config.json"
+            },
+            {
+              "path": "tokenizer.json"
+            },
+            {
+              "path": "merges.txt"
+            },
+            {
+              "path": "vocab.json"
+            }
+          ]
+        }
+      ],
+      "id": "camera-pose",
+      "name": "SenseNova Camera Pose",
+      "capability_id": "multi-view-to-camera-pose",
+      "description": "Estimate poses for two to ten ordered frames relative to frame zero, validate them with the official parser, and return deterministic JSON text.",
+      "input": "image",
+      "output": "text",
+      "output_formats": [
+        "text",
+        "json"
+      ],
+      "params_schema": [
+        {
+          "id": "seed",
+          "label": "Seed",
+          "type": "int",
+          "default": 42,
+          "min": -1,
+          "max": 2147483647,
+          "required": false,
+          "tooltip": "Upstream noise seed. Use -1 to leave the current random state unchanged."
+        },
+        {
+          "id": "view_2_image_path",
+          "label": "View 2 Image",
+          "type": "string",
+          "default": "",
+          "required": true,
+          "pickerIntent": "image",
+          "filters": [
+            {
+              "name": "Image files",
+              "extensions": [
+                "png",
+                "jpg",
+                "jpeg",
+                "webp"
+              ]
+            }
+          ],
+          "tooltip": "Select required ordered camera frame 2. Frame 1 is the connected primary image."
+        },
+        {
+          "id": "view_3_image_path",
+          "label": "View 3 Image",
+          "type": "string",
+          "default": "",
+          "required": false,
+          "pickerIntent": "image",
+          "filters": [
+            {
+              "name": "Image files",
+              "extensions": [
+                "png",
+                "jpg",
+                "jpeg",
+                "webp"
+              ]
+            }
+          ],
+          "tooltip": "Select optional ordered camera frame 3. Fill every preceding view path first; gaps are rejected."
+        },
+        {
+          "id": "view_4_image_path",
+          "label": "View 4 Image",
+          "type": "string",
+          "default": "",
+          "required": false,
+          "pickerIntent": "image",
+          "filters": [
+            {
+              "name": "Image files",
+              "extensions": [
+                "png",
+                "jpg",
+                "jpeg",
+                "webp"
+              ]
+            }
+          ],
+          "tooltip": "Select optional ordered camera frame 4. Fill every preceding view path first; gaps are rejected."
+        },
+        {
+          "id": "view_5_image_path",
+          "label": "View 5 Image",
+          "type": "string",
+          "default": "",
+          "required": false,
+          "pickerIntent": "image",
+          "filters": [
+            {
+              "name": "Image files",
+              "extensions": [
+                "png",
+                "jpg",
+                "jpeg",
+                "webp"
+              ]
+            }
+          ],
+          "tooltip": "Select optional ordered camera frame 5. Fill every preceding view path first; gaps are rejected."
+        },
+        {
+          "id": "view_6_image_path",
+          "label": "View 6 Image",
+          "type": "string",
+          "default": "",
+          "required": false,
+          "pickerIntent": "image",
+          "filters": [
+            {
+              "name": "Image files",
+              "extensions": [
+                "png",
+                "jpg",
+                "jpeg",
+                "webp"
+              ]
+            }
+          ],
+          "tooltip": "Select optional ordered camera frame 6. Fill every preceding view path first; gaps are rejected."
+        },
+        {
+          "id": "view_7_image_path",
+          "label": "View 7 Image",
+          "type": "string",
+          "default": "",
+          "required": false,
+          "pickerIntent": "image",
+          "filters": [
+            {
+              "name": "Image files",
+              "extensions": [
+                "png",
+                "jpg",
+                "jpeg",
+                "webp"
+              ]
+            }
+          ],
+          "tooltip": "Select optional ordered camera frame 7. Fill every preceding view path first; gaps are rejected."
+        },
+        {
+          "id": "view_8_image_path",
+          "label": "View 8 Image",
+          "type": "string",
+          "default": "",
+          "required": false,
+          "pickerIntent": "image",
+          "filters": [
+            {
+              "name": "Image files",
+              "extensions": [
+                "png",
+                "jpg",
+                "jpeg",
+                "webp"
+              ]
+            }
+          ],
+          "tooltip": "Select optional ordered camera frame 8. Fill every preceding view path first; gaps are rejected."
+        },
+        {
+          "id": "view_9_image_path",
+          "label": "View 9 Image",
+          "type": "string",
+          "default": "",
+          "required": false,
+          "pickerIntent": "image",
+          "filters": [
+            {
+              "name": "Image files",
+              "extensions": [
+                "png",
+                "jpg",
+                "jpeg",
+                "webp"
+              ]
+            }
+          ],
+          "tooltip": "Select optional ordered camera frame 9. Fill every preceding view path first; gaps are rejected."
+        },
+        {
+          "id": "view_10_image_path",
+          "label": "View 10 Image",
+          "type": "string",
+          "default": "",
+          "required": false,
+          "pickerIntent": "image",
+          "filters": [
+            {
+              "name": "Image files",
+              "extensions": [
+                "png",
+                "jpg",
+                "jpeg",
+                "webp"
+              ]
+            }
+          ],
+          "tooltip": "Select optional ordered camera frame 10. Fill every preceding view path first; gaps are rejected."
+        }
+      ]
+    },
+    {
+      "type": "model.generate",
+      "weight_owner_id": "shared",
+      "process_owner_id": "shared",
+      "hf_repo": "sensenova/SenseNova-Vision-7B-MoT",
+      "download_check": "checkpoint/ema.safetensors",
+      "hf_downloads": [
+        {
+          "repo_id": "sensenova/SenseNova-Vision-7B-MoT",
+          "revision": "79548fcc5b954598799b9317f8d3ec5e347d5c0e",
+          "target_subdir": "checkpoint",
+          "files": [
+            {
+              "path": "ae.safetensors",
+              "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+            },
+            {
+              "path": "ema.safetensors",
+              "sha256": "96f29abd98791288c5a24087322e964bb9bcabfc2f185ece71543f827bc2b11e"
+            },
+            {
+              "path": "config.json"
+            },
+            {
+              "path": "generation_config.json"
+            },
+            {
+              "path": "llm_config.json"
+            },
+            {
+              "path": "vit_config.json"
+            },
+            {
+              "path": "tokenizer_config.json"
+            },
+            {
+              "path": "tokenizer.json"
+            },
+            {
+              "path": "merges.txt"
+            },
+            {
+              "path": "vocab.json"
+            }
+          ]
+        }
+      ],
+      "id": "relative-depth-estimation",
+      "name": "SenseNova Relative Depth Estimation",
+      "capability_id": "relative-depth-estimation",
+      "description": "Estimate an 8-bit relative depth map using the official dense_perception prompt; brighter pixels are nearer.",
+      "input": "image",
+      "output": "image",
+      "params_schema": [
+        {
+          "id": "seed",
+          "label": "Seed",
+          "type": "int",
+          "default": 42,
+          "min": -1,
+          "max": 2147483647,
+          "required": false,
+          "tooltip": "Upstream noise seed. Use -1 to leave the current random state unchanged."
+        },
+        {
+          "id": "num_timesteps",
+          "label": "Diffusion Steps",
+          "type": "int",
+          "default": 50,
+          "min": 1,
+          "max": 100,
+          "required": false,
+          "tooltip": "Overrides the official 50-step default for image or point-map decoding."
+        },
+        {
+          "id": "cfg_text_scale",
+          "label": "Text Guidance",
+          "type": "float",
+          "default": 4.0,
+          "min": 0.0,
+          "max": 20.0,
+          "step": 0.1,
+          "required": false,
+          "tooltip": "Official classifier-free text guidance scale."
+        },
+        {
+          "id": "cfg_img_scale",
+          "label": "Image Guidance",
+          "type": "float",
+          "default": 1.0,
+          "min": 0.0,
+          "max": 20.0,
+          "step": 0.1,
+          "required": false,
+          "tooltip": "Official classifier-free image guidance scale for this mode."
+        }
+      ]
+    },
+    {
+      "type": "model.generate",
+      "weight_owner_id": "shared",
+      "process_owner_id": "shared",
+      "hf_repo": "sensenova/SenseNova-Vision-7B-MoT",
+      "download_check": "checkpoint/ema.safetensors",
+      "hf_downloads": [
+        {
+          "repo_id": "sensenova/SenseNova-Vision-7B-MoT",
+          "revision": "79548fcc5b954598799b9317f8d3ec5e347d5c0e",
+          "target_subdir": "checkpoint",
+          "files": [
+            {
+              "path": "ae.safetensors",
+              "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+            },
+            {
+              "path": "ema.safetensors",
+              "sha256": "96f29abd98791288c5a24087322e964bb9bcabfc2f185ece71543f827bc2b11e"
+            },
+            {
+              "path": "config.json"
+            },
+            {
+              "path": "generation_config.json"
+            },
+            {
+              "path": "llm_config.json"
+            },
+            {
+              "path": "vit_config.json"
+            },
+            {
+              "path": "tokenizer_config.json"
+            },
+            {
+              "path": "tokenizer.json"
+            },
+            {
+              "path": "merges.txt"
+            },
+            {
+              "path": "vocab.json"
+            }
+          ]
+        }
+      ],
+      "id": "surface-normal-estimation",
+      "name": "SenseNova Surface Normal Estimation",
+      "capability_id": "surface-normal-estimation",
+      "description": "Estimate an RGB XYZ surface-normal map using the official dense_perception prompt.",
+      "input": "image",
+      "output": "image",
+      "params_schema": [
+        {
+          "id": "seed",
+          "label": "Seed",
+          "type": "int",
+          "default": 42,
+          "min": -1,
+          "max": 2147483647,
+          "required": false,
+          "tooltip": "Upstream noise seed. Use -1 to leave the current random state unchanged."
+        },
+        {
+          "id": "num_timesteps",
+          "label": "Diffusion Steps",
+          "type": "int",
+          "default": 50,
+          "min": 1,
+          "max": 100,
+          "required": false,
+          "tooltip": "Overrides the official 50-step default for image or point-map decoding."
+        },
+        {
+          "id": "cfg_text_scale",
+          "label": "Text Guidance",
+          "type": "float",
+          "default": 4.0,
+          "min": 0.0,
+          "max": 20.0,
+          "step": 0.1,
+          "required": false,
+          "tooltip": "Official classifier-free text guidance scale."
+        },
+        {
+          "id": "cfg_img_scale",
+          "label": "Image Guidance",
+          "type": "float",
+          "default": 1.0,
+          "min": 0.0,
+          "max": 20.0,
+          "step": 0.1,
+          "required": false,
+          "tooltip": "Official classifier-free image guidance scale for this mode."
+        }
+      ]
+    },
+    {
+      "type": "model.generate",
+      "weight_owner_id": "shared",
+      "process_owner_id": "shared",
+      "hf_repo": "sensenova/SenseNova-Vision-7B-MoT",
+      "download_check": "checkpoint/ema.safetensors",
+      "hf_downloads": [
+        {
+          "repo_id": "sensenova/SenseNova-Vision-7B-MoT",
+          "revision": "79548fcc5b954598799b9317f8d3ec5e347d5c0e",
+          "target_subdir": "checkpoint",
+          "files": [
+            {
+              "path": "ae.safetensors",
+              "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+            },
+            {
+              "path": "ema.safetensors",
+              "sha256": "96f29abd98791288c5a24087322e964bb9bcabfc2f185ece71543f827bc2b11e"
+            },
+            {
+              "path": "config.json"
+            },
+            {
+              "path": "generation_config.json"
+            },
+            {
+              "path": "llm_config.json"
+            },
+            {
+              "path": "vit_config.json"
+            },
+            {
+              "path": "tokenizer_config.json"
+            },
+            {
+              "path": "tokenizer.json"
+            },
+            {
+              "path": "merges.txt"
+            },
+            {
+              "path": "vocab.json"
+            }
+          ]
+        }
+      ],
+      "id": "binary-segmentation",
+      "name": "SenseNova Binary Segmentation",
+      "capability_id": "binary-segmentation",
+      "description": "Generate binary segmentation masks for a required category, reference, or reasoning query.",
+      "input": "image",
+      "output": "image",
+      "params_schema": [
+        {
+          "id": "query",
+          "label": "Segmentation Query",
+          "type": "string",
+          "default": "",
+          "required": true,
+          "tooltip": "Required category, object reference, or reasoning description. Comma-separated categories are wrapped in official <p> tags; existing tags are preserved."
+        },
+        {
+          "id": "seed",
+          "label": "Seed",
+          "type": "int",
+          "default": 42,
+          "min": -1,
+          "max": 2147483647,
+          "required": false,
+          "tooltip": "Upstream noise seed. Use -1 to leave the current random state unchanged."
+        },
+        {
+          "id": "num_timesteps",
+          "label": "Diffusion Steps",
+          "type": "int",
+          "default": 50,
+          "min": 1,
+          "max": 100,
+          "required": false,
+          "tooltip": "Overrides the official 50-step default for image or point-map decoding."
+        },
+        {
+          "id": "cfg_text_scale",
+          "label": "Text Guidance",
+          "type": "float",
+          "default": 4.0,
+          "min": 0.0,
+          "max": 20.0,
+          "step": 0.1,
+          "required": false,
+          "tooltip": "Official classifier-free text guidance scale."
+        },
+        {
+          "id": "cfg_img_scale",
+          "label": "Image Guidance",
+          "type": "float",
+          "default": 1.0,
+          "min": 0.0,
+          "max": 20.0,
+          "step": 0.1,
+          "required": false,
+          "tooltip": "Official classifier-free image guidance scale for this mode."
+        }
+      ]
+    },
+    {
+      "type": "model.generate",
+      "weight_owner_id": "shared",
+      "process_owner_id": "shared",
+      "hf_repo": "sensenova/SenseNova-Vision-7B-MoT",
+      "download_check": "checkpoint/ema.safetensors",
+      "hf_downloads": [
+        {
+          "repo_id": "sensenova/SenseNova-Vision-7B-MoT",
+          "revision": "79548fcc5b954598799b9317f8d3ec5e347d5c0e",
+          "target_subdir": "checkpoint",
+          "files": [
+            {
+              "path": "ae.safetensors",
+              "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+            },
+            {
+              "path": "ema.safetensors",
+              "sha256": "96f29abd98791288c5a24087322e964bb9bcabfc2f185ece71543f827bc2b11e"
+            },
+            {
+              "path": "config.json"
+            },
+            {
+              "path": "generation_config.json"
+            },
+            {
+              "path": "llm_config.json"
+            },
+            {
+              "path": "vit_config.json"
+            },
+            {
+              "path": "tokenizer_config.json"
+            },
+            {
+              "path": "tokenizer.json"
+            },
+            {
+              "path": "merges.txt"
+            },
+            {
+              "path": "vocab.json"
+            }
+          ]
+        }
+      ],
+      "id": "panoptic-segmentation",
+      "name": "SenseNova Panoptic Segmentation",
+      "capability_id": "panoptic-segmentation",
+      "description": "Generate a panoptic segmentation image and the upstream tagged instance caption.",
+      "input": "image",
+      "output": "image",
+      "params_schema": [
+        {
+          "id": "categories",
+          "label": "Categories",
+          "type": "string",
+          "default": "",
+          "required": false,
+          "tooltip": "Optional comma-separated or <p>-tagged categories. Empty uses the official COCO categories in official order."
+        },
+        {
+          "id": "seed",
+          "label": "Seed",
+          "type": "int",
+          "default": 42,
+          "min": -1,
+          "max": 2147483647,
+          "required": false,
+          "tooltip": "Upstream noise seed. Use -1 to leave the current random state unchanged."
+        },
+        {
+          "id": "num_timesteps",
+          "label": "Diffusion Steps",
+          "type": "int",
+          "default": 50,
+          "min": 1,
+          "max": 100,
+          "required": false,
+          "tooltip": "Overrides the official 50-step default for image or point-map decoding."
+        },
+        {
+          "id": "cfg_text_scale",
+          "label": "Text Guidance",
+          "type": "float",
+          "default": 4.0,
+          "min": 0.0,
+          "max": 20.0,
+          "step": 0.1,
+          "required": false,
+          "tooltip": "Official classifier-free text guidance scale."
+        },
+        {
+          "id": "cfg_img_scale",
+          "label": "Image Guidance",
+          "type": "float",
+          "default": 1.0,
+          "min": 0.0,
+          "max": 20.0,
+          "step": 0.1,
+          "required": false,
+          "tooltip": "Official classifier-free image guidance scale for this mode."
+        }
+      ]
+    },
+    {
+      "type": "model.generate",
+      "weight_owner_id": "shared",
+      "process_owner_id": "shared",
+      "hf_repo": "sensenova/SenseNova-Vision-7B-MoT",
+      "download_check": "checkpoint/ema.safetensors",
+      "hf_downloads": [
+        {
+          "repo_id": "sensenova/SenseNova-Vision-7B-MoT",
+          "revision": "79548fcc5b954598799b9317f8d3ec5e347d5c0e",
+          "target_subdir": "checkpoint",
+          "files": [
+            {
+              "path": "ae.safetensors",
+              "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+            },
+            {
+              "path": "ema.safetensors",
+              "sha256": "96f29abd98791288c5a24087322e964bb9bcabfc2f185ece71543f827bc2b11e"
+            },
+            {
+              "path": "config.json"
+            },
+            {
+              "path": "generation_config.json"
+            },
+            {
+              "path": "llm_config.json"
+            },
+            {
+              "path": "vit_config.json"
+            },
+            {
+              "path": "tokenizer_config.json"
+            },
+            {
+              "path": "tokenizer.json"
+            },
+            {
+              "path": "merges.txt"
+            },
+            {
+              "path": "vocab.json"
+            }
+          ]
+        }
+      ],
+      "id": "bounding-box-detection",
+      "name": "SenseNova Bounding-Box Detection",
+      "capability_id": "bounding-box-detection",
+      "description": "Return the unparsed upstream tagged bounding-box detections for required categories.",
+      "input": "image",
+      "output": "text",
+      "params_schema": [
+        {
+          "id": "categories",
+          "label": "Categories",
+          "type": "string",
+          "default": "",
+          "required": true,
+          "tooltip": "Required comma-separated or already <p>-tagged detection categories."
+        },
+        {
+          "id": "seed",
+          "label": "Seed",
+          "type": "int",
+          "default": 42,
+          "min": -1,
+          "max": 2147483647,
+          "required": false,
+          "tooltip": "Upstream noise seed. Use -1 to leave the current random state unchanged."
+        },
+        {
+          "id": "include_json_resource",
+          "label": "Attach Raw JSON Resource",
+          "type": "boolean",
+          "default": true,
+          "required": false,
+          "tooltip": "Attach a JSON envelope containing prompt, mode, and untouched raw text. No model semantics are parsed or invented."
+        }
+      ]
+    },
+    {
+      "type": "model.generate",
+      "weight_owner_id": "shared",
+      "process_owner_id": "shared",
+      "hf_repo": "sensenova/SenseNova-Vision-7B-MoT",
+      "download_check": "checkpoint/ema.safetensors",
+      "hf_downloads": [
+        {
+          "repo_id": "sensenova/SenseNova-Vision-7B-MoT",
+          "revision": "79548fcc5b954598799b9317f8d3ec5e347d5c0e",
+          "target_subdir": "checkpoint",
+          "files": [
+            {
+              "path": "ae.safetensors",
+              "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+            },
+            {
+              "path": "ema.safetensors",
+              "sha256": "96f29abd98791288c5a24087322e964bb9bcabfc2f185ece71543f827bc2b11e"
+            },
+            {
+              "path": "config.json"
+            },
+            {
+              "path": "generation_config.json"
+            },
+            {
+              "path": "llm_config.json"
+            },
+            {
+              "path": "vit_config.json"
+            },
+            {
+              "path": "tokenizer_config.json"
+            },
+            {
+              "path": "tokenizer.json"
+            },
+            {
+              "path": "merges.txt"
+            },
+            {
+              "path": "vocab.json"
+            }
+          ]
+        }
+      ],
+      "id": "point-detection",
+      "name": "SenseNova Point Detection",
+      "capability_id": "point-detection",
+      "description": "Return the unparsed upstream point detections for required categories.",
+      "input": "image",
+      "output": "text",
+      "params_schema": [
+        {
+          "id": "categories",
+          "label": "Categories",
+          "type": "string",
+          "default": "",
+          "required": true,
+          "tooltip": "Required comma-separated or already <p>-tagged detection categories."
+        },
+        {
+          "id": "seed",
+          "label": "Seed",
+          "type": "int",
+          "default": 42,
+          "min": -1,
+          "max": 2147483647,
+          "required": false,
+          "tooltip": "Upstream noise seed. Use -1 to leave the current random state unchanged."
+        },
+        {
+          "id": "include_json_resource",
+          "label": "Attach Raw JSON Resource",
+          "type": "boolean",
+          "default": true,
+          "required": false,
+          "tooltip": "Attach a JSON envelope containing prompt, mode, and untouched raw text. No model semantics are parsed or invented."
+        }
+      ]
+    },
+    {
+      "type": "model.generate",
+      "weight_owner_id": "shared",
+      "process_owner_id": "shared",
+      "hf_repo": "sensenova/SenseNova-Vision-7B-MoT",
+      "download_check": "checkpoint/ema.safetensors",
+      "hf_downloads": [
+        {
+          "repo_id": "sensenova/SenseNova-Vision-7B-MoT",
+          "revision": "79548fcc5b954598799b9317f8d3ec5e347d5c0e",
+          "target_subdir": "checkpoint",
+          "files": [
+            {
+              "path": "ae.safetensors",
+              "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+            },
+            {
+              "path": "ema.safetensors",
+              "sha256": "96f29abd98791288c5a24087322e964bb9bcabfc2f185ece71543f827bc2b11e"
+            },
+            {
+              "path": "config.json"
+            },
+            {
+              "path": "generation_config.json"
+            },
+            {
+              "path": "llm_config.json"
+            },
+            {
+              "path": "vit_config.json"
+            },
+            {
+              "path": "tokenizer_config.json"
+            },
+            {
+              "path": "tokenizer.json"
+            },
+            {
+              "path": "merges.txt"
+            },
+            {
+              "path": "vocab.json"
+            }
+          ]
+        }
+      ],
+      "id": "keypoint-detection",
+      "name": "SenseNova Keypoint Detection",
+      "capability_id": "keypoint-detection",
+      "description": "Return upstream tagged keypoint detections using the official human, animal, or mixed template selected from the categories.",
+      "input": "image",
+      "output": "text",
+      "params_schema": [
+        {
+          "id": "categories",
+          "label": "Categories",
+          "type": "string",
+          "default": "",
+          "required": true,
+          "tooltip": "Required comma-separated or already <p>-tagged categories; determines the official human, animal, or mixed keypoint template."
+        },
+        {
+          "id": "seed",
+          "label": "Seed",
+          "type": "int",
+          "default": 42,
+          "min": -1,
+          "max": 2147483647,
+          "required": false,
+          "tooltip": "Upstream noise seed. Use -1 to leave the current random state unchanged."
+        },
+        {
+          "id": "include_json_resource",
+          "label": "Attach Raw JSON Resource",
+          "type": "boolean",
+          "default": true,
+          "required": false,
+          "tooltip": "Attach a JSON envelope containing prompt, mode, and untouched raw text. No model semantics are parsed or invented."
+        }
+      ]
+    },
+    {
+      "type": "model.generate",
+      "weight_owner_id": "shared",
+      "process_owner_id": "shared",
+      "hf_repo": "sensenova/SenseNova-Vision-7B-MoT",
+      "download_check": "checkpoint/ema.safetensors",
+      "hf_downloads": [
+        {
+          "repo_id": "sensenova/SenseNova-Vision-7B-MoT",
+          "revision": "79548fcc5b954598799b9317f8d3ec5e347d5c0e",
+          "target_subdir": "checkpoint",
+          "files": [
+            {
+              "path": "ae.safetensors",
+              "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+            },
+            {
+              "path": "ema.safetensors",
+              "sha256": "96f29abd98791288c5a24087322e964bb9bcabfc2f185ece71543f827bc2b11e"
+            },
+            {
+              "path": "config.json"
+            },
+            {
+              "path": "generation_config.json"
+            },
+            {
+              "path": "llm_config.json"
+            },
+            {
+              "path": "vit_config.json"
+            },
+            {
+              "path": "tokenizer_config.json"
+            },
+            {
+              "path": "tokenizer.json"
+            },
+            {
+              "path": "merges.txt"
+            },
+            {
+              "path": "vocab.json"
+            }
+          ]
+        }
+      ],
+      "id": "ocr",
+      "name": "SenseNova Word-Level OCR",
+      "capability_id": "word-level-ocr",
+      "description": "Return the unparsed upstream word-level OCR text and tagged bounding boxes using dense_OCR.",
+      "input": "image",
+      "output": "text",
+      "params_schema": [
+        {
+          "id": "seed",
+          "label": "Seed",
+          "type": "int",
+          "default": 42,
+          "min": -1,
+          "max": 2147483647,
+          "required": false,
+          "tooltip": "Upstream noise seed. Use -1 to leave the current random state unchanged."
+        },
+        {
+          "id": "include_json_resource",
+          "label": "Attach Raw JSON Resource",
+          "type": "boolean",
+          "default": true,
+          "required": false,
+          "tooltip": "Attach a JSON envelope containing prompt, mode, and untouched raw text. No model semantics are parsed or invented."
+        }
+      ]
+    }
+  ]
+}

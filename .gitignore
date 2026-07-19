@@ -1,0 +1,11 @@
+venv/
+.modly/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+/wheels/flash_attn/flash_attn-2.7.3-cp312-cp312-linux_aarch64.whl

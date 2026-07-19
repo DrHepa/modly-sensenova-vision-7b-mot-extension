@@ -1,0 +1,65 @@
+{
+  "schema_version": "sensenova-flash-attn-wheelhouse/v1",
+  "extension_id": "sensenova-vision-7b-mot",
+  "status": "verified-local-compatibility-adaptation",
+  "official_upstream_reference": {
+    "requirement": "flash-attn==2.6.3",
+    "source_repository": "https://github.com/OpenSenseNova/SenseNova-Vision",
+    "source_commit": "beea1f771b8192c597085c0e668f4430d2089d8d",
+    "source_file": "setup.sh",
+    "note": "This records the official upstream environment reference; it is not the wheel installed by this Modly lane."
+  },
+  "selected_runtime_adaptation": {
+    "requirement": "flash-attn==2.7.3",
+    "reason": "The local wheel below passed an executed BF16 CUDA kernel smoke with the exact Modly runtime lane."
+  },
+  "policy": "Setup accepts only this local wheel after verifying its real filename, byte size, SHA-256, package metadata, version, and exact selectors. Source builds and remote wheel downloads are forbidden.",
+  "assets": [
+    {
+      "id": "flash-attn-2.7.3-linux-aarch64-cp312-torch2.7.0-cu128-sm121",
+      "package": "flash-attn",
+      "version": "2.7.3",
+      "filename": "wheels/flash_attn/flash_attn-2.7.3-cp312-cp312-linux_aarch64.whl",
+      "size_bytes": 406023844,
+      "sha256": "8b7c2138cce6ff36f13051d3d83ac688ed0f997c629e5c1e140c120b552a9fc6",
+      "selectors": {
+        "os": "linux",
+        "arch": "aarch64",
+        "python_tag": "cp312",
+        "torch": "2.7.0+cu128",
+        "cuda": "12.8",
+        "gpu_sm": 121
+      },
+      "verification_evidence": {
+        "verified_at": "2026-07-16",
+        "python": "3.12.3",
+        "torch": "2.7.0+cu128",
+        "cuda_runtime": "12.8",
+        "gpu_sm": 121,
+        "nvidia_driver": "580.159.03",
+        "import_source": "extracted wheel contents",
+        "excluded_installed_version": "flash-attn 2.8.3",
+        "kernel": "flash_attn_varlen_func",
+        "dtype": "bfloat16",
+        "modes": [
+          "causal",
+          "noncausal"
+        ],
+        "checks": [
+          "output shape",
+          "finite output"
+        ]
+      },
+      "license_files": [
+        {
+          "path": "licenses/flash-attn/LICENSE",
+          "sha256": "8c9ccb96c065e706135b6cbad279b721da6156e51f3a5f27c6b3329af9416d73"
+        },
+        {
+          "path": "licenses/flash-attn/AUTHORS",
+          "sha256": "f3bf4144826a62841b7f9aebc5057f75da2d32a652a573edc67250ec94a377a7"
+        }
+      ]
+    }
+  ]
+}

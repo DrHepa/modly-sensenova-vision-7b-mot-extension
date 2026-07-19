@@ -1,0 +1,148 @@
+{
+  "entrypoint": "inference/sensenova_vision.py",
+  "files": [
+    {
+      "path": "data/__init__.py",
+      "sha256": "b9c64721adb79eb0396c4df35d67eda5272b6deaf06541bf3bff2297b0680b08",
+      "size_bytes": 98
+    },
+    {
+      "path": "data/data_utils.py",
+      "sha256": "8b8da14dc15cce5133325fdc8b0fd04754cc95a15a5d503a36f333549f249dc8",
+      "size_bytes": 6739
+    },
+    {
+      "path": "data/recon3d/mixed_path.py",
+      "sha256": "56b93eccebe360006d5daa7520bb8ef830cffcbbc3fb28ab113a53ed45fba69f",
+      "size_bytes": 444
+    },
+    {
+      "path": "data/transforms.py",
+      "sha256": "bd2b180da3fd669f1489aa3afa27d127f5c79c7558767b5bc12fc5f64a1b9396",
+      "size_bytes": 5221
+    },
+    {
+      "path": "inference/__init__.py",
+      "sha256": "9f9ad31242b82b3d3fc60eae3c90031478de270e517f05c72145752e5a6eac49",
+      "size_bytes": 67
+    },
+    {
+      "path": "inference/inferencer.py",
+      "sha256": "cbf5ec35299f54618ab789d7b74da43c712fd559aa5110c1644c6af6d90cf85e",
+      "size_bytes": 16828
+    },
+    {
+      "path": "inference/sensenova_vision.py",
+      "sha256": "bfb5b109dfb664558113099594eb0e868647fa3445099997fa4c6dab13aaf5dd",
+      "size_bytes": 31394
+    },
+    {
+      "path": "inference/utils_3d/__init__.py",
+      "sha256": "f1386e95f8359aa438489b0e419d0eb3fb7e0c069fe0800f5308d3d76f32bf56",
+      "size_bytes": 219
+    },
+    {
+      "path": "inference/utils_3d/camera_pose_parser.py",
+      "sha256": "6697c117fb6e1674d1bd14038f85b567155c4bc743d63f72fa5fada5b4945839",
+      "size_bytes": 3695
+    },
+    {
+      "path": "inference/utils_3d/geometry.py",
+      "sha256": "6e8a04f6804c99fad6db69c5456b502dd40caaa940b0601717903aeefe6ea3ee",
+      "size_bytes": 75474
+    },
+    {
+      "path": "inference/utils_3d/utils_3d.py",
+      "sha256": "a11ff362e00feefb2963877e3474799f9c4fb1bb0ffa4ed9442ef12a7b3d71c6",
+      "size_bytes": 3470
+    },
+    {
+      "path": "modeling/__init__.py",
+      "sha256": "e0e43ca419f3d066a1ca2f1e5ad0ff957937af8ee414c50c10ab31a8e7eb40a4",
+      "size_bytes": 162
+    },
+    {
+      "path": "modeling/autoencoder.py",
+      "sha256": "ee5bf3265560f6b46d76de80249f9d4be111157e67b8fac90273bd56795690ad",
+      "size_bytes": 12228
+    },
+    {
+      "path": "modeling/bagel/__init__.py",
+      "sha256": "8f81d7bf64388bf2c8db14e1d5adaddadf64c7031a737afbd5705fd906dd7a35",
+      "size_bytes": 486
+    },
+    {
+      "path": "modeling/bagel/bagel.py",
+      "sha256": "bad4ea3d9b054b3e35536d69eca4d3136009844fb46350954ee22e9b842d39a1",
+      "size_bytes": 50469
+    },
+    {
+      "path": "modeling/bagel/modeling_utils.py",
+      "sha256": "9b1a9d24e1eedd62f6efbbdb75186b9f25a09a6c9ea2533b673f7fcd3b7aba27",
+      "size_bytes": 5400
+    },
+    {
+      "path": "modeling/bagel/qwen2_navit.py",
+      "sha256": "d72a1ce4b50df837f28e0eca5d442863929c2aff7ff312e2a78c6dffbcf03b57",
+      "size_bytes": 56638
+    },
+    {
+      "path": "modeling/bagel/siglip_navit.py",
+      "sha256": "20916a17e97df5720457276d5aa459803d08f8d78abef25f845a71d4bfd6e7c1",
+      "size_bytes": 14996
+    },
+    {
+      "path": "modeling/qwen2/__init__.py",
+      "sha256": "891db5131c4a219bdd647bbbff6ad2db8ec04f0d4f20027243d44163ac1ba1ee",
+      "size_bytes": 1735
+    },
+    {
+      "path": "modeling/qwen2/configuration_qwen2.py",
+      "sha256": "be614d420a2de57c5866a59eb823a4acccb64a36584ee76462c89091697e2248",
+      "size_bytes": 9800
+    },
+    {
+      "path": "modeling/qwen2/modeling_qwen2.py",
+      "sha256": "565020f74c053de68fbe7622e70b09732a91e733edee2ab5009c89caa38929a5",
+      "size_bytes": 42939
+    },
+    {
+      "path": "modeling/qwen2/tokenization_qwen2.py",
+      "sha256": "6b5dd43f6adc4268b85c1a0bc2d370ac2d6c977b1a340143eb885206bebc3c10",
+      "size_bytes": 13436
+    },
+    {
+      "path": "modeling/qwen2/tokenization_qwen2_fast.py",
+      "sha256": "5fb0302649a055e44b3c725bdd416329f660af547e945a26a8763b8dc40292fc",
+      "size_bytes": 4715
+    },
+    {
+      "path": "modeling/siglip/__init__.py",
+      "sha256": "9b8a7fd6ca34aebacae49d6aeec298c87cef1f3c9a74e14a8ddcda009b58d464",
+      "size_bytes": 2480
+    },
+    {
+      "path": "modeling/siglip/configuration_siglip.py",
+      "sha256": "75d0296fde1c132379af766a7510f767f8bd846a453bcdf37d2d189daa7bb7a4",
+      "size_bytes": 13063
+    },
+    {
+      "path": "modeling/siglip/modeling_siglip.py",
+      "sha256": "1192aa835fe484b4c1a7b1dfc2fe8ad0abad813c3b9362893232267cb3a47c17",
+      "size_bytes": 68498
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "43070e2d4e532684de521b885f385d0841030efa2b1a20bafb76133a5e1379c1",
+      "size_bytes": 11356
+    }
+  ],
+  "schema_version": "modly.vendored-source.v1",
+  "selection": "Exact recursive local-Python import closure for the runtime entrypoint, plus the upstream license.",
+  "upstream": {
+    "commit": "beea1f771b8192c597085c0e668f4430d2089d8d",
+    "license": "Apache-2.0",
+    "project": "OpenSenseNova/SenseNova-Vision",
+    "repository": "https://github.com/OpenSenseNova/SenseNova-Vision.git"
+  }
+}
