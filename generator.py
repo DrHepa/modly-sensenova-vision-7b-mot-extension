@@ -479,8 +479,13 @@ class SenseNovaVisionGenerator(BaseGenerator):
         params: dict[str, Any],
     ) -> tuple[tuple[bytes, ...], tuple[str, ...]]:
         if node_id == "open-image-generation":
-            if image_bytes:
-                raise ValueError("open-image-generation does not accept an image input")
+            if not isinstance(image_bytes, (bytes, bytearray, memoryview)):
+                raise TypeError(
+                    "open-image-generation transport payload must be bytes-like"
+                )
+            # Modly upstream v0.4.1 routes text-input models through the existing
+            # image endpoint with a synthetic 1x1 PNG. The model must never see
+            # that transport-only placeholder as a real conditioning image.
             return (), ()
 
         if not isinstance(image_bytes, (bytes, bytearray, memoryview)) or not image_bytes:

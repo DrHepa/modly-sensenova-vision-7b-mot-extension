@@ -49,7 +49,7 @@ def param(node: dict, param_id: str) -> dict:
 def test_manifest_identity_and_authorship() -> None:
     assert MANIFEST["id"] == "sensenova-vision-7b-mot"
     assert MANIFEST["kind"] == MANIFEST["type"] == "model"
-    assert MANIFEST["version"] == "0.2.1"
+    assert MANIFEST["version"] == "0.2.2"
     assert MANIFEST["author"] == "DrHepa"
     assert MANIFEST["source"] == (
         "https://github.com/DrHepa/modly-sensenova-vision-7b-mot-extension"
@@ -64,7 +64,7 @@ def test_manifest_uses_only_established_model_io_fields() -> None:
         assert "io_contract" not in node
         assert "inputs" not in node
         assert "outputs" not in node
-        assert node["input"] in {"none", "image"}
+        assert node["input"] in {"text", "image"}
         assert node["output"] in {"image", "text", "mesh"}
 
     serialized = json.dumps(MANIFEST, sort_keys=True).casefold()
@@ -103,7 +103,11 @@ def test_published_weight_hashes_are_used_for_both_safetensors() -> None:
 
 def test_primary_input_and_output_types_match_every_capability() -> None:
     nodes = by_id()
-    assert nodes["open-image-generation"]["input"] == "none"
+    assert nodes["open-image-generation"]["input"] == "text"
+    assert all(
+        value["id"] != "prompt"
+        for value in nodes["open-image-generation"]["params_schema"]
+    )
     for node_id, node in nodes.items():
         if node_id != "open-image-generation":
             assert node["input"] == "image"

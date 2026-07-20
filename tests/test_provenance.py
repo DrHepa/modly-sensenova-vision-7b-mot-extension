@@ -140,3 +140,18 @@ def test_weight_scan_ignores_installed_runtime_state_but_not_payload(
     assert redistributed_model_weight_paths(tmp_path) == [
         "accidental-model.safetensors"
     ]
+
+def test_modly_v041_text_input_contract_and_extension_version_are_documented() -> None:
+    manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    open_generation = next(
+        node for node in manifest["nodes"] if node["id"] == "open-image-generation"
+    )
+
+    assert manifest["version"] == "0.2.2"
+    assert open_generation["input"] == "text"
+    assert all(value["id"] != "prompt" for value in open_generation["params_schema"])
+    assert "Modly tag `v0.4.1`" in readme
+    assert "d2d100dd4364ad17f398e55a4a9ce529313352da" in readme
+    assert "`params.prompt`" in readme
+    assert "synthetic 1x1 PNG" in readme

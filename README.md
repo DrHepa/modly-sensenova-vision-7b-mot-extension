@@ -18,13 +18,13 @@ Local development copies require the same Release-asset provisioning and explici
 
 ## Usage
 
-Version `0.2.1` exposes all 15 capabilities through Modly's established model-node interface. A node receives one connected primary image when its manifest `input` is `image`; additional ordered images use the declared image-picker parameters. Every primary result is an existing artifact inside a collision-safe run directory: PNG for image nodes, GLB for reconstruction, and UTF-8 `.txt` served as `text/plain` for text nodes. Optional and diagnostic results remain beside the primary artifact as sidecars.
+Version `0.2.2` exposes all 15 capabilities through Modly's established model-node interface. `open-image-generation` receives one required connected text value; every image-input node receives one connected primary image. Additional ordered images use the declared image-picker parameters. Every primary result is an existing artifact inside a collision-safe run directory: PNG for image nodes, GLB for reconstruction, and UTF-8 `.txt` served as `text/plain` for text nodes. Optional and diagnostic results remain beside the primary artifact as sidecars.
 
 ### Nodes
 
 | Node ID | Primary input and supplemental images | Task parameters | Primary output and sidecars |
 | --- | --- | --- | --- |
-| `open-image-generation` | no image input | `prompt` required; `seed=42`; `num_timesteps=50`; `cfg_text_scale=4.0`; `cfg_img_scale=1.0`; `reasoning_mode=false` | `image.png`; optional `reasoning.txt` |
+| `open-image-generation` | required connected Modly Text node; transported as `params.prompt` | `seed=42`; `num_timesteps=50`; `cfg_text_scale=4.0`; `cfg_img_scale=1.0`; `reasoning_mode=false` | `image.png`; optional `reasoning.txt` |
 | `image-to-image-vision` | connected source image | `prompt` required; `seed=42`; `num_timesteps=50`; `cfg_text_scale=4.0`; `cfg_img_scale=2.0`; `reasoning_mode=false` | `image.png`; optional `reasoning.txt` |
 | `visual-prompt-segmentation` | connected scene plus required `prompt_image_path` image picker | `seed=42`; `num_timesteps=50`; text/image guidance `4.0`/`1.0` | `segmentation.png` |
 | `captioned-segmentation` | connected image | `seed=42`; `num_timesteps=50`; text/image guidance `4.0`/`1.0` | `segmentation.png`; `caption.txt` sidecar |
@@ -44,6 +44,18 @@ Every image-generation override keeps the existing defaults: seed `42`, 50
 steps, text guidance `4.0`, and image guidance `1.0` except image editing, which
 uses the official `2.0` default. Seed `-1` leaves the current random state
 unchanged.
+
+### Open image generation workflow
+
+1. Add a Modly **Text** node and enter the generation instruction.
+2. Connect its text output to `open-image-generation`.
+3. Set the optional seed, diffusion, guidance, and reasoning controls.
+4. Run the workflow and consume the returned `image.png`.
+
+The connected value is the only prompt control. Modly transports it in
+`params.prompt`; the extension deliberately exposes no duplicate **Prompt**
+parameter on this node.
+
 
 ### Multi-image ordering
 
@@ -92,6 +104,19 @@ Image capabilities return an existing absolute `.png` path. Reconstruction retur
 Detection, keypoint, OCR, and structured-vision text is written exactly as the model produces it to the primary UTF-8 `.txt` artifact. Optional JSON sidecars contain the raw text and prompt and explicitly state that semantic parsing was not applied.
 
 ## Requirements and compatibility
+
+### Modly upstream v0.4.1 input contract
+
+Compatibility is pinned to official Modly tag `v0.4.1`, commit
+`d2d100dd4364ad17f398e55a4a9ce529313352da`. That host recognizes a model as
+text-input only when the node manifest declares `"input": "text"`. It copies
+the connected text into `params.prompt` (and `params.text`), routes the request
+through the established image generation endpoint with a synthetic 1x1 PNG,
+and then invokes the unchanged generator signature. This adapter accepts both
+that placeholder and the legacy empty byte payload but materializes neither as
+a SenseNova model image; open generation always calls upstream with
+`images=[]`.
+
 
 SenseNova-Vision-7B-MoT requires a CUDA GPU with BF16 support. The extension is
 currently verified only for the concrete lane below and should not be presented
@@ -169,7 +194,7 @@ env PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
   python3 -m pytest -p no:cacheprovider -q
 ```
 
-Current result: **64 passed**. Coverage includes all 15 dispatches, exact official prompt builders and modes, shared weight/process ownership, category formatting and COCO ordering, supplemental image ordering, UTF-8 text artifacts, sidecar retention, progress/cancellation, pose parsing, POINTS GLB/NPY reconstruction, setup commands, and wheel hashes.
+Current result: **67 passed**. Coverage includes all 15 dispatches, exact official prompt builders and modes, shared weight/process ownership, category formatting and COCO ordering, supplemental image ordering, UTF-8 text artifacts, sidecar retention, progress/cancellation, pose parsing, POINTS GLB/NPY reconstruction, setup commands, and wheel hashes.
 
 ### Live Modly validation
 

@@ -58,6 +58,12 @@ def png_bytes(color: tuple[int, int, int]) -> bytes:
     return stream.getvalue()
 
 
+def placeholder_png_bytes() -> bytes:
+    stream = io.BytesIO()
+    Image.new("RGB", (1, 1), (255, 255, 255)).save(stream, format="PNG")
+    return stream.getvalue()
+
+
 def write_png(path: Path, color: tuple[int, int, int]) -> Path:
     Image.new("RGB", (4, 3), color).save(path, format="PNG")
     return path
@@ -278,6 +284,29 @@ def test_open_generation_and_edit_use_direct_contract_and_official_modes(
     )
     assert model.calls[-1]["input_colors"] == [(200, 1, 2)]
     assert model.calls[-1]["cfg_img_scale"] == 2.0
+
+
+@pytest.mark.parametrize(
+    ("transport_bytes", "case_id"),
+    [(b"", "legacy-empty"), (placeholder_png_bytes(), "upstream-placeholder")],
+)
+def test_open_generation_ignores_transport_image_for_legacy_and_v041_routes(
+    tmp_path: Path,
+    transport_bytes: bytes,
+    case_id: str,
+) -> None:
+    generator, model = make_generator(tmp_path)
+    result, run_dir = invoke(
+        generator,
+        "open-image-generation",
+        image_bytes=transport_bytes,
+        params={"prompt": f"Compatibility case: {case_id}."},
+    )
+
+    assert result.is_file()
+    assert not (run_dir / ".inputs").exists()
+    assert model.calls[-1]["images"] == []
+    assert model.calls[-1]["input_colors"] == []
 
 
 def test_visual_prompt_uses_primary_scene_plus_picker_image_in_canonical_order(

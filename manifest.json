@@ -4,7 +4,7 @@
   "type": "model",
   "name": "SenseNova Vision 7B MoT",
   "displayName": "SenseNova Vision 7B MoT",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Offline Modly adapter for the complete pinned SenseNova-Vision-7B-MoT inference surface: generation, editing, understanding, dense perception, segmentation, detection, OCR, point-cloud reconstruction, and camera pose.",
   "source": "https://github.com/DrHepa/modly-sensenova-vision-7b-mot-extension",
   "author": "DrHepa",
@@ -127,17 +127,9 @@
       "name": "SenseNova Open Image Generation",
       "capability_id": "text-to-image",
       "description": "Generate one PNG from a text prompt with the official generate mode.",
-      "input": "none",
+      "input": "text",
       "output": "image",
       "params_schema": [
-        {
-          "id": "prompt",
-          "label": "Prompt",
-          "type": "string",
-          "default": "",
-          "required": true,
-          "tooltip": "Required SenseNova instruction."
-        },
         {
           "id": "seed",
           "label": "Seed",
