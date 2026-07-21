@@ -8,6 +8,7 @@ import json
 import os
 import platform
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -22,14 +23,22 @@ EXTENSION_ID = "sensenova-vision-7b-mot"
 STATUS_SCHEMA = "modly.setup-status.v1"
 SCRIPT_DIR = Path(__file__).resolve().parent
 
-PYTHON_VERSION = (3, 12)
+SUPPORTED_PYTHON_VERSIONS = {(3, 11), (3, 12)}
 TORCH_VERSION = "2.7.0"
 TORCHVISION_VERSION = "0.22.0"
-TORCH_INDEX_URL = "https://download.pytorch.org/whl/cu128"
-CUDA_VERSION = 128
+TORCH_INDEX_URLS = {
+    "cu118": "https://download.pytorch.org/whl/cu118",
+    "cu126": "https://download.pytorch.org/whl/cu126",
+    "cu128": "https://download.pytorch.org/whl/cu128",
+}
 UPSTREAM_FLASH_ATTN_VERSION = "2.6.3"
 FLASH_ATTN_VERSION = "2.7.3"
 OPEN3D_VERSION = "0.19.0"
+FLASH_ATTN_ARM64_RELEASE_URL = (
+    "https://github.com/DrHepa/modly-sensenova-vision-7b-mot-extension/"
+    "releases/download/v0.2.2/"
+    "flash_attn-2.7.3-cp312-cp312-linux_aarch64.whl#sha256=8b7c2138cce6ff36f13051d3d83ac688ed0f997c629e5c1e140c120b552a9fc6"
+)
 OPTIONAL_STATIC_TLS_TUNABLE = "glibc.rtld.optional_static_tls=262144"
 PYTHON_LAUNCHER = f"""#!/bin/sh
 _required_tunable={OPTIONAL_STATIC_TLS_TUNABLE!r}
@@ -115,6 +124,9 @@ RUNTIME_REQUIREMENTS = (
     "huggingface_hub==0.29.1",
     "numpy==1.26.4",
     "Pillow==11.2.1",
+    "packaging==24.2",
+    "ninja==1.11.1.3",
+    "psutil==6.1.1",
     "regex==2024.11.6",
     "safetensors==0.4.5",
     "scipy==1.14.1",
@@ -143,6 +155,9 @@ class SetupConfig:
     ext_dir: Path
     gpu_sm: int
     cuda_version: int
+    accelerator: str = ""
+    platform_name: str = ""
+    arch: str = ""
 
 
 @dataclass(frozen=True)
@@ -204,7 +219,8 @@ def _require_int(value: Any, field: str) -> int:
 
 
 def parse_setup_args(argv: Sequence[str]) -> SetupConfig:
-    """Accept Electron's single JSON argv and the established legacy form."""
+    """Accept Modly's single JSON argv and the established legacy form."""
+
     if len(argv) == 1:
         try:
             payload = json.loads(argv[0])
@@ -215,7 +231,7 @@ def parse_setup_args(argv: Sequence[str]) -> SetupConfig:
             ) from exc
         if not isinstance(payload, Mapping):
             raise SetupError("Setup JSON must be an object", "invalid-arguments")
-        required = {"python_exe", "ext_dir", "gpu_sm", "cuda_version"}
+        required = {"python_exe", "ext_dir"}
         missing = sorted(required - set(payload))
         if missing:
             raise SetupError(
@@ -224,17 +240,23 @@ def parse_setup_args(argv: Sequence[str]) -> SetupConfig:
             )
         python_exe = Path(str(payload["python_exe"])).expanduser()
         ext_dir = Path(str(payload["ext_dir"])).expanduser()
-        gpu_sm = _require_int(payload["gpu_sm"], "gpu_sm")
-        cuda_version = _require_int(payload["cuda_version"], "cuda_version")
+        gpu_sm = _require_int(payload.get("gpu_sm", 0), "gpu_sm")
+        cuda_version = _require_int(payload.get("cuda_version", 0), "cuda_version")
+        accelerator = str(payload.get("accelerator") or "")
+        platform_name = str(payload.get("platform") or "")
+        arch = str(payload.get("arch") or "")
     elif len(argv) in {3, 4}:
         python_exe = Path(argv[0]).expanduser()
         ext_dir = Path(argv[1]).expanduser()
         gpu_sm = _require_int(argv[2], "gpu_sm")
-        cuda_version = _require_int(argv[3], "cuda_version") if len(argv) == 4 else CUDA_VERSION
+        cuda_version = _require_int(argv[3], "cuda_version") if len(argv) == 4 else 0
+        accelerator = ""
+        platform_name = ""
+        arch = ""
     else:
         raise SetupError(
-            "Usage: setup.py '{\"python_exe\":\"...\",\"ext_dir\":\"...\","
-            "\"gpu_sm\":121,\"cuda_version\":128}' or "
+            "Usage: setup.py with one JSON object containing python_exe, ext_dir, "
+            "and optional gpu_sm, cuda_version, platform, and arch; or "
             "setup.py <python_exe> <ext_dir> <gpu_sm> [cuda_version]",
             "invalid-arguments",
         )
@@ -242,9 +264,116 @@ def parse_setup_args(argv: Sequence[str]) -> SetupConfig:
     return SetupConfig(
         python_exe=python_exe.resolve(),
         ext_dir=ext_dir.resolve(),
-        gpu_sm=gpu_sm,
-        cuda_version=cuda_version,
+        gpu_sm=max(0, gpu_sm),
+        cuda_version=max(0, cuda_version),
+        accelerator=accelerator,
+        platform_name=platform_name,
+        arch=arch,
     )
+
+
+def _normalize_system(value: str) -> str:
+    aliases = {
+        "linux": "linux",
+        "win32": "windows",
+        "windows": "windows",
+    }
+    normalized = aliases.get(str(value or "").strip().casefold())
+    if normalized is None:
+        raise SetupError(
+            f"Unsupported operating system: {value or 'unknown'}; expected Windows or Linux",
+            "unsupported-platform",
+        )
+    return normalized
+
+
+def _normalize_machine(value: str) -> str:
+    aliases = {
+        "amd64": "x86_64",
+        "x64": "x86_64",
+        "x86_64": "x86_64",
+        "arm64": "aarch64",
+        "aarch64": "aarch64",
+    }
+    normalized = aliases.get(str(value or "").strip().casefold())
+    if normalized is None:
+        raise SetupError(
+            f"Unsupported architecture: {value or 'unknown'}; expected x86_64 or aarch64",
+            "unsupported-platform",
+        )
+    return normalized
+
+
+def _torch_build(cuda_version: int) -> str:
+    if cuda_version >= 128:
+        return "cu128"
+    if cuda_version >= 126:
+        return "cu126"
+    if cuda_version >= 118:
+        return "cu118"
+    return "pypi"
+
+
+_PYTHON_PROBE_SCRIPT = """
+import json
+import platform
+import sys
+
+print(json.dumps({
+    "implementation": platform.python_implementation().lower(),
+    "version": list(sys.version_info[:3]),
+    "platform": sys.platform,
+    "machine": platform.machine(),
+}, sort_keys=True))
+"""
+
+
+def _probe_python_environment(
+    python_exe: Path,
+    *,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> dict[str, Any]:
+    try:
+        result = runner(
+            [str(python_exe), "-I", "-B", "-c", _PYTHON_PROBE_SCRIPT],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise SetupError(
+            f"Could not execute the supplied Python interpreter: {python_exe}: {exc}",
+            "python-probe-failed",
+        ) from exc
+    if result.returncode != 0:
+        detail = _redact((result.stderr or result.stdout or "").strip())
+        raise SetupError(
+            f"Supplied Python probe failed with exit code {result.returncode}: "
+            f"{detail or python_exe}",
+            "python-probe-failed",
+        )
+    try:
+        payload = json.loads(result.stdout)
+        version = tuple(int(value) for value in payload["version"][:2])
+        implementation = str(payload["implementation"]).casefold()
+        detected_system = _normalize_system(str(payload["platform"]))
+        detected_machine = _normalize_machine(str(payload["machine"]))
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise SetupError(
+            "Supplied Python returned invalid environment information",
+            "python-probe-failed",
+        ) from exc
+    return {
+        "implementation": implementation,
+        "version": version,
+        "system": detected_system,
+        "machine": detected_machine,
+    }
+
 
 
 def validate_lane(
@@ -253,45 +382,70 @@ def validate_lane(
     system: str | None = None,
     machine: str | None = None,
     python_version: tuple[int, int] | None = None,
+    python_implementation: str = "cpython",
 ) -> dict[str, Any]:
-    detected_system = (system or platform.system()).casefold()
-    detected_machine = (machine or platform.machine()).casefold()
-    aliases = {"arm64": "aarch64"}
-    detected_machine = aliases.get(detected_machine, detected_machine)
+    detected_system = _normalize_system(system or platform.system())
+    detected_machine = _normalize_machine(machine or platform.machine())
     detected_python = python_version or (sys.version_info.major, sys.version_info.minor)
-
-    problems: list[str] = []
-    if detected_system != "linux":
-        problems.append(f"operating system is {detected_system or 'unknown'}, expected linux")
-    if detected_machine != "aarch64":
-        problems.append(f"architecture is {detected_machine or 'unknown'}, expected aarch64")
-    if tuple(detected_python) != PYTHON_VERSION:
-        problems.append(
-            f"Python is {detected_python[0]}.{detected_python[1]}, expected 3.12"
-        )
-    if config.cuda_version != CUDA_VERSION:
-        problems.append(
-            f"CUDA lane is {config.cuda_version}, expected {CUDA_VERSION} (12.8)"
-        )
-    if config.gpu_sm != 121:
-        problems.append(
-            f"GPU SM is {config.gpu_sm}; the verified FlashAttention wheel requires SM 121"
-        )
-    if problems:
+    if python_implementation.strip().casefold() != "cpython":
         raise SetupError(
-            "Unsupported SenseNova setup lane: " + "; ".join(problems),
-            "unsupported-platform",
+            f"Unsupported Python implementation: {python_implementation}; expected CPython",
+            "unsupported-python",
         )
+    if tuple(detected_python) not in SUPPORTED_PYTHON_VERSIONS:
+        raise SetupError(
+            f"Unsupported Python {detected_python[0]}.{detected_python[1]}; "
+            "expected CPython 3.11 or 3.12",
+            "unsupported-python",
+        )
+    if config.platform_name and _normalize_system(config.platform_name) != detected_system:
+        raise SetupError(
+            "Modly platform metadata does not match the supplied Python host",
+            "environment-mismatch",
+        )
+    if config.arch and _normalize_machine(config.arch) != detected_machine:
+        raise SetupError(
+            "Modly architecture metadata does not match the supplied Python host",
+            "environment-mismatch",
+        )
+    raw_accelerator = (
+        config.accelerator or ("cuda" if config.cuda_version > 0 else "unknown")
+    ).strip().casefold()
+    accelerator_aliases = {
+        "cuda": "cuda",
+        "nvidia": "cuda",
+        "unknown": "unknown",
+        "": "unknown",
+        "cpu": "cpu",
+        "none": "cpu",
+    }
+    accelerator = accelerator_aliases.get(raw_accelerator)
+    if accelerator is None:
+        raise SetupError(
+            f"Unsupported accelerator metadata: {config.accelerator}",
+            "unsupported-accelerator",
+        )
+    if accelerator == "cpu":
+        raise SetupError(
+            "SenseNova generation requires CUDA; Modly reported a CPU-only profile",
+            "unsupported-accelerator",
+        )
+    build = _torch_build(config.cuda_version)
     return {
-        "id": "linux-aarch64/cp312/cu128/torch2.7.0/sm121",
-        "os": "linux",
-        "arch": "aarch64",
-        "python": "3.12",
-        "python_tag": "cp312",
-        "cuda": "12.8",
+        "id": (
+            f"{detected_system}-{detected_machine}/"
+            f"cp{detected_python[0]}{detected_python[1]}/{build}"
+        ),
+        "os": detected_system,
+        "arch": detected_machine,
+        "python": f"{detected_python[0]}.{detected_python[1]}",
+        "python_tag": f"cp{detected_python[0]}{detected_python[1]}",
+        "cuda": config.cuda_version,
+        "torch_build": build,
         "torch": TORCH_VERSION,
         "torchvision": TORCHVISION_VERSION,
         "gpu_sm": config.gpu_sm,
+        "accelerator": accelerator,
     }
 
 
@@ -496,14 +650,43 @@ def _run_command(
     for line in output.splitlines():
         logger.write(line)
     if result.returncode != 0:
+        command_text = " ".join(_redact(str(value)) for value in command)
+        output_lines = [line.strip() for line in output.splitlines() if line.strip()]
+        detail = _redact(output_lines[-1]) if output_lines else "no command output"
         raise SetupError(
-            f"Command failed with exit code {result.returncode}: {command[0]}",
+            f"Command failed with exit code {result.returncode}: {command_text}. "
+            f"Last output: {detail}. Full log: {logger.path}",
             "dependency-install-failed",
         )
 
 
-def _venv_python(ext_dir: Path) -> Path:
-    return ext_dir / "venv" / "bin" / "python"
+def _venv_python(ext_dir: Path, system: str | None = None) -> Path:
+    detected_system = _normalize_system(system or platform.system())
+    relative = (
+        Path("Scripts/python.exe")
+        if detected_system == "windows"
+        else Path("bin/python")
+    )
+    return ext_dir / "venv" / relative
+
+
+def _venv_matches_profile(
+    venv_python: Path,
+    lane: Mapping[str, Any],
+    *,
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+) -> bool:
+    try:
+        probe = _probe_python_environment(venv_python, runner=runner)
+    except SetupError:
+        return False
+    expected_python = tuple(int(part) for part in str(lane["python"]).split("."))
+    return (
+        probe["implementation"] == "cpython"
+        and tuple(probe["version"]) == expected_python
+        and probe["system"] == lane["os"]
+        and probe["machine"] == lane["arch"]
+    )
 
 
 def _install_python_launcher(venv_python: Path) -> None:
@@ -543,43 +726,58 @@ def _install_python_launcher(venv_python: Path) -> None:
             temporary.unlink(missing_ok=True)
 
 
-def _smoke_script(ext_dir: Path) -> str:
+def _smoke_script(
+    ext_dir: Path,
+    *,
+    require_tls_launcher: bool,
+    flash_version: str,
+) -> str:
     vendor = ext_dir / "vendor" / "opensensenova_sensenova_vision"
     return f"""
 import importlib
 import json
 import os
 import sys
+from importlib import metadata
 from pathlib import Path
 
 os.environ.update({{
-    'HF_HUB_OFFLINE': '1',
-    'HF_DATASETS_OFFLINE': '1',
-    'TRANSFORMERS_OFFLINE': '1',
-    'HF_HUB_DISABLE_TELEMETRY': '1',
+    "HF_HUB_OFFLINE": "1",
+    "HF_DATASETS_OFFLINE": "1",
+    "TRANSFORMERS_OFFLINE": "1",
+    "HF_HUB_DISABLE_TELEMETRY": "1",
 }})
-glibc_tunables = os.environ.get('GLIBC_TUNABLES', '').split(':')
-assert glibc_tunables.count({OPTIONAL_STATIC_TLS_TUNABLE!r}) == 1
+if {require_tls_launcher!r}:
+    glibc_tunables = os.environ.get("GLIBC_TUNABLES", "").split(":")
+    assert glibc_tunables.count({OPTIONAL_STATIC_TLS_TUNABLE!r}) == 1
+
 sys.path.insert(0, {str(vendor)!r})
-open3d = importlib.import_module('open3d')
-torch = importlib.import_module('torch')
-flash_attn = importlib.import_module('flash_attn')
-from flash_attn import flash_attn_varlen_func
-runtime = importlib.import_module('inference.sensenova_vision')
+open3d = importlib.import_module("open3d")
+torch = importlib.import_module("torch")
+torchvision = importlib.import_module("torchvision")
+flash_attn = importlib.import_module("flash_attn")
+runtime = importlib.import_module("inference.sensenova_vision")
+
 assert Path(runtime.__file__).resolve().is_relative_to(Path({str(vendor)!r}).resolve())
 assert open3d.__version__ == {OPEN3D_VERSION!r}
-assert str(torch.__version__) == {f"{TORCH_VERSION}+cu128"!r}
-assert torch.version.cuda == '12.8'
-assert torch.cuda.is_available()
-assert torch.cuda.get_device_capability(0) == (12, 1)
-assert flash_attn.__version__ == {FLASH_ATTN_VERSION!r}
+assert str(torch.__version__).split("+", 1)[0] == {TORCH_VERSION!r}
+assert metadata.version("torchvision").split("+", 1)[0] == {TORCHVISION_VERSION!r}
+assert torchvision.extension._has_ops(), "torchvision compiled operators are unavailable"
+assert metadata.version("flash-attn") == {flash_version!r}
+assert torch.cuda.is_available(), "SenseNova generation requires a CUDA-capable PyTorch runtime"
 
+capability = list(torch.cuda.get_device_capability(0))
+dtype = (
+    torch.bfloat16
+    if capability[0] >= 8 and torch.cuda.is_bf16_supported()
+    else torch.float16
+)
+from flash_attn import flash_attn_varlen_func
 torch.manual_seed(0)
-device = torch.device('cuda')
-cu_seqlens = torch.tensor([0, 4], dtype=torch.int32, device=device)
-q = torch.randn((4, 2, 64), dtype=torch.bfloat16, device=device)
-k = torch.randn((4, 2, 64), dtype=torch.bfloat16, device=device)
-v = torch.randn((4, 2, 64), dtype=torch.bfloat16, device=device)
+q = torch.randn((4, 2, 64), dtype=dtype, device="cuda")
+k = torch.randn((4, 2, 64), dtype=dtype, device="cuda")
+v = torch.randn((4, 2, 64), dtype=dtype, device="cuda")
+cu_seqlens = torch.tensor([0, 4], dtype=torch.int32, device="cuda")
 kernel_checks = {{}}
 for causal in (False, True):
     output = flash_attn_varlen_func(
@@ -594,23 +792,20 @@ for causal in (False, True):
         causal=causal,
     )
     assert output.shape == q.shape
-    assert output.dtype == torch.bfloat16
+    assert output.dtype == dtype
     assert bool(torch.isfinite(output).all().item())
-    kernel_checks['causal' if causal else 'noncausal'] = {{
-        'shape': list(output.shape),
-        'finite': True,
-        'dtype': str(output.dtype),
-    }}
+    kernel_checks["causal" if causal else "noncausal"] = True
 torch.cuda.synchronize()
-
 print(json.dumps({{
-    'open3d': open3d.__version__,
-    'torch': torch.__version__,
-    'cuda': torch.version.cuda,
-    'gpu_sm': 121,
-    'flash_attn': flash_attn.__version__,
-    'flash_attn_varlen_func': kernel_checks,
-    'runtime': str(Path(runtime.__file__).resolve()),
+    "open3d": open3d.__version__,
+    "torch": str(torch.__version__),
+    "torchvision": metadata.version("torchvision"),
+    "cuda": torch.version.cuda,
+    "gpu_capability": capability,
+    "flash_dtype": str(dtype),
+    "flash_kernel": kernel_checks,
+    "flash_attn": metadata.version("flash-attn"),
+    "runtime": str(Path(runtime.__file__).resolve()),
 }}, sort_keys=True))
 """
 
@@ -623,20 +818,34 @@ def run_setup(
     system: str | None = None,
     machine: str | None = None,
     python_version: tuple[int, int] | None = None,
+    python_implementation: str = "cpython",
 ) -> dict[str, Any]:
-    lane = validate_lane(
-        config,
-        system=system,
-        machine=machine,
-        python_version=python_version,
-    )
+    if config.ext_dir != SCRIPT_DIR:
+        raise SetupError(
+            f"Setup ext_dir must be this extension directory: {SCRIPT_DIR}",
+            "invalid-extension-directory",
+        )
     if not config.python_exe.is_file():
         raise SetupError(
             f"Python executable does not exist: {config.python_exe}",
             "invalid-python",
         )
+    if system is None and machine is None and python_version is None:
+        probe = _probe_python_environment(config.python_exe, runner=runner)
+        system = str(probe["system"])
+        machine = str(probe["machine"])
+        python_version = tuple(probe["version"])
+        python_implementation = str(probe["implementation"])
+    lane = validate_lane(
+        config,
+        system=system,
+        machine=machine,
+        python_version=python_version,
+        python_implementation=python_implementation,
+    )
     missing = [
-        str(relative) for relative in REQUIRED_EXTENSION_FILES
+        str(relative)
+        for relative in REQUIRED_EXTENSION_FILES
         if not (config.ext_dir / relative).is_file()
     ]
     if missing:
@@ -645,43 +854,126 @@ def run_setup(
             "extension-source-missing",
         )
 
-    logger.info(f"Selected audited lane: {lane['id']}")
-    open3d = resolve_open3d_asset(config.ext_dir)
-    logger.info(f"Verified Open3D wheel: {open3d.path.name} ({open3d.sha256})")
-    flash_attn = resolve_flash_attn_asset(config.ext_dir)
-    logger.info(
-        f"Verified FlashAttention wheel: {flash_attn.path.name} ({flash_attn.sha256})"
+    logger.info(f"Detected setup profile: {lane['id']}")
+    exact_arm_lane = (
+        lane["os"] == "linux"
+        and lane["arch"] == "aarch64"
+        and lane["python_tag"] == "cp312"
+    )
+    exact_flash_lane = (
+        exact_arm_lane
+        and lane["torch_build"] == "cu128"
+        and config.gpu_sm == 121
     )
 
-    venv_python = _venv_python(config.ext_dir)
+    open3d_asset: WheelAsset | None = None
+    if exact_arm_lane:
+        try:
+            open3d_asset = resolve_open3d_asset(config.ext_dir)
+        except SetupError as exc:
+            logger.info(
+                "Optional verified Open3D wheel is unavailable; "
+                f"falling back to pip: {exc}"
+            )
+    open3d_requirement = (
+        str(open3d_asset.path)
+        if open3d_asset is not None
+        else f"open3d=={OPEN3D_VERSION}"
+    )
+
+    flash_asset: WheelAsset | None = None
+    flash_fallback_requirement: str | None = None
+    flash_fallback_source: str | None = None
+    if exact_flash_lane:
+        try:
+            flash_asset = resolve_flash_attn_asset(config.ext_dir)
+        except SetupError as exc:
+            logger.info(
+                "Optional local FlashAttention fallback is unavailable; "
+                f"the checksum-pinned release fallback remains available: {exc}"
+            )
+        if flash_asset is not None:
+            flash_fallback_requirement = str(flash_asset.path)
+            flash_fallback_source = "verified-local-wheel"
+        else:
+            flash_fallback_requirement = FLASH_ATTN_ARM64_RELEASE_URL
+            flash_fallback_source = "verified-release-wheel"
+
+    flash_requirement = f"flash-attn=={UPSTREAM_FLASH_ATTN_VERSION}"
+    flash_source = "pip"
+    flash_version = UPSTREAM_FLASH_ATTN_VERSION
+
+    venv_dir = config.ext_dir / "venv"
+    venv_python = _venv_python(config.ext_dir, lane["os"])
+    if venv_dir.exists() and (
+        not venv_python.is_file()
+        or not _venv_matches_profile(venv_python, lane, runner=runner)
+    ):
+        logger.info("Rebuilding extension venv for the detected Python/platform profile")
+        shutil.rmtree(venv_dir)
     if not venv_python.is_file():
         _run_command(
-            [str(config.python_exe), "-m", "venv", str(config.ext_dir / "venv")],
+            [str(config.python_exe), "-m", "venv", str(venv_dir)],
             logger,
             runner=runner,
         )
     if not venv_python.is_file():
-        raise SetupError("Virtual environment creation did not produce venv/bin/python")
+        raise SetupError(
+            f"Virtual environment creation did not produce {venv_python}",
+            "venv-creation-failed",
+        )
 
-    _install_python_launcher(venv_python)
-    logger.info("Installed Open3D static-TLS Python launcher")
+    require_tls_launcher = open3d_asset is not None and lane["os"] == "linux"
+    if require_tls_launcher:
+        _install_python_launcher(venv_python)
+        logger.info("Enabled the verified ARM Open3D static-TLS launcher")
 
     pip = [str(venv_python), "-m", "pip", "install", "--no-input"]
     _run_command([*pip, "--upgrade", *BOOTSTRAP_REQUIREMENTS], logger, runner=runner)
-    _run_command(
-        [
-            *pip,
-            f"torch=={TORCH_VERSION}",
-            f"torchvision=={TORCHVISION_VERSION}",
-            "--index-url",
-            TORCH_INDEX_URL,
-        ],
-        logger,
-        runner=runner,
-    )
+
+    torch_command = [
+        *pip,
+        f"torch=={TORCH_VERSION}",
+        f"torchvision=={TORCHVISION_VERSION}",
+    ]
+    torch_index = TORCH_INDEX_URLS.get(lane["torch_build"])
+    if torch_index is not None:
+        torch_command.extend(["--index-url", torch_index])
+    _run_command(torch_command, logger, runner=runner)
+
     _run_command([*pip, *RUNTIME_REQUIREMENTS], logger, runner=runner)
-    _run_command([*pip, str(open3d.path)], logger, runner=runner)
-    _run_command([*pip, "--no-deps", str(flash_attn.path)], logger, runner=runner)
+    _run_command([*pip, open3d_requirement], logger, runner=runner)
+
+    flash_command = [
+        *pip,
+        "--no-build-isolation",
+        "--no-deps",
+        flash_requirement,
+    ]
+    flash_env = dict(os.environ)
+    flash_env.setdefault("MAX_JOBS", "4")
+    try:
+        _run_command(flash_command, logger, runner=runner, env=flash_env)
+    except SetupError as primary_error:
+        if flash_fallback_requirement is None or flash_fallback_source is None:
+            raise
+        logger.info(
+            "The normal pinned FlashAttention install failed; "
+            f"using the exact verified fallback: {primary_error}"
+        )
+        flash_requirement = flash_fallback_requirement
+        flash_source = flash_fallback_source
+        flash_version = FLASH_ATTN_VERSION
+        _run_command(
+            [
+                *pip,
+                "--force-reinstall",
+                "--no-deps",
+                flash_requirement,
+            ],
+            logger,
+            runner=runner,
+        )
     _run_command(
         [str(venv_python), "-m", "pip", "check"],
         logger,
@@ -697,25 +989,79 @@ def run_setup(
         "NO_PROXY": "*",
         "no_proxy": "*",
     })
-    _run_command(
-        [str(venv_python), "-B", "-c", _smoke_script(config.ext_dir)],
-        logger,
-        runner=runner,
-        env=smoke_env,
-    )
+    def run_smoke() -> None:
+        _run_command(
+            [
+                str(venv_python),
+                "-B",
+                "-c",
+                _smoke_script(
+                    config.ext_dir,
+                    require_tls_launcher=require_tls_launcher,
+                    flash_version=flash_version,
+                ),
+            ],
+            logger,
+            runner=runner,
+            env=smoke_env,
+        )
+
+    try:
+        run_smoke()
+    except SetupError as smoke_error:
+        if (
+            flash_source != "pip"
+            or flash_fallback_requirement is None
+            or flash_fallback_source is None
+        ):
+            raise
+        logger.info(
+            "The normal FlashAttention install failed native readiness; "
+            f"using the exact verified fallback: {smoke_error}"
+        )
+        flash_requirement = flash_fallback_requirement
+        flash_source = flash_fallback_source
+        flash_version = FLASH_ATTN_VERSION
+        _run_command(
+            [
+                *pip,
+                "--force-reinstall",
+                "--no-deps",
+                flash_requirement,
+            ],
+            logger,
+            runner=runner,
+        )
+        _run_command(
+            [str(venv_python), "-m", "pip", "check"],
+            logger,
+            runner=runner,
+        )
+        run_smoke()
     return {
         "lane": lane,
         "venv_python": str(venv_python),
         "open3d": {
-            "path": str(open3d.path),
-            "sha256": open3d.sha256,
-            "version": open3d.version,
+            "source": (
+                "verified-local-wheel"
+                if open3d_asset is not None
+                else "pip"
+            ),
+            "requirement": open3d_requirement,
+            "sha256": open3d_asset.sha256 if open3d_asset is not None else None,
+            "version": OPEN3D_VERSION,
         },
         "flash_attn": {
-            "path": str(flash_attn.path),
-            "sha256": flash_attn.sha256,
-            "version": flash_attn.version,
+            "source": flash_source,
+            "requirement": flash_requirement,
+            "sha256": (
+                flash_asset.sha256
+                if flash_source == "verified-local-wheel" and flash_asset is not None
+                else None
+            ),
+            "version": flash_version,
         },
+        "model_weights_downloaded": False,
     }
 
 
@@ -762,6 +1108,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     except SetupError as exc:
         print(f"[setup:{EXTENSION_ID}][error] {exc}", file=sys.stderr, flush=True)
         return 2
+    if config.ext_dir != SCRIPT_DIR:
+        print(
+            f"[setup:{EXTENSION_ID}][error] invalid-extension-directory: "
+            f"ext_dir must be {SCRIPT_DIR}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 2
+
 
     started_at = _utc_now()
     logger = SetupLogger(config.ext_dir / LOG_RELATIVE_PATH)
