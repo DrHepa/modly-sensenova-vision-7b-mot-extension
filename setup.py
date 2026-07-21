@@ -111,6 +111,8 @@ FLASH_ATTN_VERIFICATION_EVIDENCE = {
 
 STATUS_RELATIVE_PATH = Path(".modly/setup/setup-status.json")
 LOG_RELATIVE_PATH = Path(".modly/setup/logs/setup.log")
+VENV_TRANSACTION_MARKER_RELATIVE_PATH = Path(".modly/setup/venv-transaction.json")
+VENV_TRANSACTION_BACKUP_RELATIVE_PATH = Path(".modly/setup/venv-backup")
 
 BOOTSTRAP_REQUIREMENTS = (
     "pip==25.1.1",
@@ -195,6 +197,110 @@ class SetupLogger:
         self.write(f"[setup:{EXTENSION_ID}][error] {message}")
 
 
+class VenvTransaction:
+    """Replace the shared extension venv without losing the last working copy."""
+
+    def __init__(self, ext_dir: Path, logger: SetupLogger) -> None:
+        self.venv_dir = ext_dir / "venv"
+        self.marker_path = ext_dir / VENV_TRANSACTION_MARKER_RELATIVE_PATH
+        self.backup_dir = ext_dir / VENV_TRANSACTION_BACKUP_RELATIVE_PATH
+        self.logger = logger
+        self._active = False
+
+    @staticmethod
+    def _remove_path(path: Path) -> None:
+        if path.is_symlink() or path.is_file():
+            path.unlink(missing_ok=True)
+        elif path.exists():
+            shutil.rmtree(path)
+
+    def _read_had_existing(self) -> bool:
+        try:
+            payload = json.loads(self.marker_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return self.backup_dir.exists()
+        return bool(payload.get("had_existing", self.backup_dir.exists()))
+
+    def _write_marker(self, had_existing: bool) -> None:
+        self.marker_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.marker_path.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps(
+                {
+                    "schema": "modly.venv-transaction.v1",
+                    "had_existing": had_existing,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temporary, self.marker_path)
+
+    def rollback(self) -> str | None:
+        """Restore the previous venv, or remove a failed fresh installation."""
+
+        if not self._active and not self.marker_path.exists():
+            return None
+        had_existing = self._read_had_existing()
+        try:
+            if self.backup_dir.exists():
+                self._remove_path(self.venv_dir)
+                os.replace(self.backup_dir, self.venv_dir)
+                self.logger.info("Restored the previous extension venv")
+            elif not had_existing:
+                self._remove_path(self.venv_dir)
+            self.marker_path.unlink(missing_ok=True)
+            self._active = False
+            return None
+        except OSError as exc:
+            message = f"Could not restore the previous extension venv: {exc}"
+            self.logger.error(message)
+            return message
+
+    def begin(self) -> None:
+        if self.marker_path.exists():
+            self.logger.info("Recovering an interrupted venv replacement")
+            error = self.rollback()
+            if error is not None:
+                raise SetupError(error, "venv-rollback-failed")
+        if self.backup_dir.exists():
+            self.logger.info("Removing an orphaned extension venv backup")
+            self._remove_path(self.backup_dir)
+
+        had_existing = self.venv_dir.exists() or self.venv_dir.is_symlink()
+        self._write_marker(had_existing)
+        self._active = True
+        if had_existing:
+            try:
+                os.replace(self.venv_dir, self.backup_dir)
+            except OSError as exc:
+                error = self.rollback()
+                detail = f"; rollback failed: {error}" if error else ""
+                raise SetupError(
+                    f"Could not preserve the existing extension venv: {exc}{detail}",
+                    "venv-backup-failed",
+                ) from exc
+            self.logger.info("Preserved the previous extension venv until setup succeeds")
+
+    def commit(self) -> None:
+        if not self._active:
+            return
+        try:
+            self.marker_path.unlink()
+        except OSError as exc:
+            raise SetupError(
+                f"Could not commit the extension venv replacement: {exc}",
+                "venv-commit-failed",
+            ) from exc
+        self._active = False
+        try:
+            self._remove_path(self.backup_dir)
+        except OSError as exc:
+            self.logger.info(f"Could not remove the old venv backup yet: {exc}")
+
+
 def _redact(value: str) -> str:
     value = re.sub(r"hf_[A-Za-z0-9]{8,}", "hf_[REDACTED]", value)
     value = re.sub(
@@ -207,6 +313,16 @@ def _redact(value: str) -> str:
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _same_directory(left: Path, right: Path) -> bool:
+    try:
+        return left.samefile(right)
+    except OSError:
+        return os.path.normcase(str(left.resolve(strict=False))) == os.path.normcase(
+            str(right.resolve(strict=False))
+        )
+
 
 
 def _require_int(value: Any, field: str) -> int:
@@ -423,11 +539,6 @@ def validate_lane(
     if accelerator is None:
         raise SetupError(
             f"Unsupported accelerator metadata: {config.accelerator}",
-            "unsupported-accelerator",
-        )
-    if accelerator == "cpu":
-        raise SetupError(
-            "SenseNova generation requires CUDA; Modly reported a CPU-only profile",
             "unsupported-accelerator",
         )
     build = _torch_build(config.cuda_version)
@@ -764,45 +875,49 @@ assert str(torch.__version__).split("+", 1)[0] == {TORCH_VERSION!r}
 assert metadata.version("torchvision").split("+", 1)[0] == {TORCHVISION_VERSION!r}
 assert torchvision.extension._has_ops(), "torchvision compiled operators are unavailable"
 assert metadata.version("flash-attn") == {flash_version!r}
-assert torch.cuda.is_available(), "SenseNova generation requires a CUDA-capable PyTorch runtime"
-
-capability = list(torch.cuda.get_device_capability(0))
-dtype = (
-    torch.bfloat16
-    if capability[0] >= 8 and torch.cuda.is_bf16_supported()
-    else torch.float16
-)
-from flash_attn import flash_attn_varlen_func
-torch.manual_seed(0)
-q = torch.randn((4, 2, 64), dtype=dtype, device="cuda")
-k = torch.randn((4, 2, 64), dtype=dtype, device="cuda")
-v = torch.randn((4, 2, 64), dtype=dtype, device="cuda")
-cu_seqlens = torch.tensor([0, 4], dtype=torch.int32, device="cuda")
-kernel_checks = {{}}
-for causal in (False, True):
-    output = flash_attn_varlen_func(
-        q,
-        k,
-        v,
-        cu_seqlens,
-        cu_seqlens,
-        4,
-        4,
-        dropout_p=0.0,
-        causal=causal,
+cuda_available = bool(torch.cuda.is_available())
+capability = None
+dtype = None
+kernel_checks = {{"status": "not-run"}}
+if cuda_available:
+    capability = list(torch.cuda.get_device_capability(0))
+    dtype = (
+        torch.bfloat16
+        if capability[0] >= 8 and torch.cuda.is_bf16_supported()
+        else torch.float16
     )
-    assert output.shape == q.shape
-    assert output.dtype == dtype
-    assert bool(torch.isfinite(output).all().item())
-    kernel_checks["causal" if causal else "noncausal"] = True
-torch.cuda.synchronize()
+    from flash_attn import flash_attn_varlen_func
+    torch.manual_seed(0)
+    q = torch.randn((4, 2, 64), dtype=dtype, device="cuda")
+    k = torch.randn((4, 2, 64), dtype=dtype, device="cuda")
+    v = torch.randn((4, 2, 64), dtype=dtype, device="cuda")
+    cu_seqlens = torch.tensor([0, 4], dtype=torch.int32, device="cuda")
+    kernel_checks = {{}}
+    for causal in (False, True):
+        output = flash_attn_varlen_func(
+            q,
+            k,
+            v,
+            cu_seqlens,
+            cu_seqlens,
+            4,
+            4,
+            dropout_p=0.0,
+            causal=causal,
+        )
+        assert output.shape == q.shape
+        assert output.dtype == dtype
+        assert bool(torch.isfinite(output).all().item())
+        kernel_checks["causal" if causal else "noncausal"] = True
+    torch.cuda.synchronize()
 print(json.dumps({{
     "open3d": open3d.__version__,
     "torch": str(torch.__version__),
     "torchvision": metadata.version("torchvision"),
     "cuda": torch.version.cuda,
+    "cuda_available": cuda_available,
     "gpu_capability": capability,
-    "flash_dtype": str(dtype),
+    "flash_dtype": str(dtype) if dtype is not None else None,
     "flash_kernel": kernel_checks,
     "flash_attn": metadata.version("flash-attn"),
     "runtime": str(Path(runtime.__file__).resolve()),
@@ -820,7 +935,7 @@ def run_setup(
     python_version: tuple[int, int] | None = None,
     python_implementation: str = "cpython",
 ) -> dict[str, Any]:
-    if config.ext_dir != SCRIPT_DIR:
+    if not _same_directory(config.ext_dir, SCRIPT_DIR):
         raise SetupError(
             f"Setup ext_dir must be this extension directory: {SCRIPT_DIR}",
             "invalid-extension-directory",
@@ -909,8 +1024,11 @@ def run_setup(
         not venv_python.is_file()
         or not _venv_matches_profile(venv_python, lane, runner=runner)
     ):
-        logger.info("Rebuilding extension venv for the detected Python/platform profile")
-        shutil.rmtree(venv_dir)
+        raise SetupError(
+            "Existing extension venv does not match the requested profile; "
+            "run setup through its main entry point for transactional replacement",
+            "venv-profile-mismatch",
+        )
     if not venv_python.is_file():
         _run_command(
             [str(config.python_exe), "-m", "venv", str(venv_dir)],
@@ -1108,7 +1226,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except SetupError as exc:
         print(f"[setup:{EXTENSION_ID}][error] {exc}", file=sys.stderr, flush=True)
         return 2
-    if config.ext_dir != SCRIPT_DIR:
+    if not _same_directory(config.ext_dir, SCRIPT_DIR):
         print(
             f"[setup:{EXTENSION_ID}][error] invalid-extension-directory: "
             f"ext_dir must be {SCRIPT_DIR}",
@@ -1121,8 +1239,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     started_at = _utc_now()
     logger = SetupLogger(config.ext_dir / LOG_RELATIVE_PATH)
     _write_status(config, status="running", started_at=started_at)
+    transaction = VenvTransaction(config.ext_dir, logger)
     try:
         logger.info("Preparing dependencies only; model weights remain UI-managed")
+        transaction.begin()
         result = run_setup(config, logger)
         _write_status(
             config,
@@ -1131,8 +1251,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             result=result,
         )
         logger.info("SenseNova extension runtime is ready")
+        transaction.commit()
         return 0
     except SetupError as exc:
+        rollback_error = transaction.rollback()
+        if rollback_error is not None:
+            exc = SetupError(
+                f"{exc}; rollback failed: {rollback_error}",
+                "venv-rollback-failed",
+            )
         _write_status(
             config,
             status="blocked",
@@ -1142,8 +1269,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         logger.error(f"{exc.code}: {exc}")
         return 1
     except Exception as exc:
+        rollback_error = transaction.rollback()
+        rollback_detail = (
+            f"; rollback failed: {rollback_error}" if rollback_error else ""
+        )
         wrapped = SetupError(
-            f"Unexpected setup failure: {exc.__class__.__name__}: {exc}",
+            f"Unexpected setup failure: {exc.__class__.__name__}: {exc}{rollback_detail}",
             "unexpected-setup-error",
         )
         _write_status(
