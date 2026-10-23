@@ -57,7 +57,8 @@
     },
     "downloads_weights": false,
     "weights_managed_by": "modly-ui/downloader",
-    "flash_attn_policy": "verified-local-wheel-only-no-source-build",
+    "flash_attn_policy": "verified-wheel-when-selector-matches-otherwise-sdpa-no-source-build",
+    "attention_backend_fallback": "torch.nn.functional.scaled_dot_product_attention",
     "evidence": {
       "status_path": ".modly/setup/setup-status.json",
       "log_path": ".modly/setup/logs/setup.log"

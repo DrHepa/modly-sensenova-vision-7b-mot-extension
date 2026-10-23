@@ -27,7 +27,7 @@ def test_vendored_runtime_closure_matches_every_recorded_hash() -> None:
     )
     assert provenance["upstream"]["license"] == "Apache-2.0"
     records = provenance["files"]
-    assert len(records) == 27
+    assert len(records) == 28
     for record in records:
         path = VENDOR / record["path"]
         assert path.is_file()

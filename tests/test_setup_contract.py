@@ -149,19 +149,26 @@ def test_flash_wheel_wrong_lane_or_evidence_fails_closed(
     assert caught.value.code == "flash-attn-wheelhouse-missing"
 
 
-def test_setup_stops_before_installing_when_flash_wheel_is_absent(
+def test_exact_linux_lane_uses_checksum_pinned_release_when_local_wheel_is_absent(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = load_setup_module()
     extension = tmp_path / "extension"
     _copy_required_source(extension)
+    monkeypatch.setattr(module, "SCRIPT_DIR", extension.resolve())
     monkeypatch.setattr(module, "resolve_open3d_asset", lambda _ext: _real_open3d_asset(module))
     calls: list[list[str]] = []
+    venv_python = extension / "venv/bin/python"
+    venv_python.parent.mkdir(parents=True)
+    (venv_python.parent / "python3.12").write_bytes(b"linux-python")
+    venv_python.symlink_to("python3.12")
+    monkeypatch.setattr(module, "_venv_python", lambda _ext, _system=None: venv_python)
+    monkeypatch.setattr(module, "_venv_matches_profile", lambda *_args, **_kwargs: True)
 
     def runner(command, **kwargs):
         calls.append(list(command))
-        raise AssertionError("runner must not execute before wheel preflight succeeds")
+        return subprocess.CompletedProcess(command, 0, stdout="ok\n")
 
     logger = module.SetupLogger(tmp_path / "setup.log")
     config = module.SetupConfig(
@@ -171,19 +178,20 @@ def test_setup_stops_before_installing_when_flash_wheel_is_absent(
         cuda_version=128,
     )
     try:
-        with pytest.raises(module.SetupError) as caught:
-            module.run_setup(
-                config,
-                logger,
-                runner=runner,
-                system="Linux",
-                machine="aarch64",
-                python_version=(3, 12),
-            )
+        result = module.run_setup(
+            config,
+            logger,
+            runner=runner,
+            system="Linux",
+            machine="aarch64",
+            python_version=(3, 12),
+        )
     finally:
         logger.close()
-    assert caught.value.code == "flash-attn-wheelhouse-missing"
-    assert calls == []
+    joined = [" ".join(command) for command in calls]
+    assert any(module.FLASH_ATTN_ARM64_RELEASE_URL in command for command in joined)
+    assert result["flash_attn"]["source"] == "verified-release-wheel"
+    assert result["attention_backend"]["selected"] == "flash-attn"
 
 
 def test_python_launcher_replaces_symlink_without_overwriting_target_and_is_idempotent(
@@ -250,7 +258,7 @@ def test_verified_assets_produce_only_pinned_dependency_commands(
     system_python.chmod(0o755)
     (venv_python.parent / "python3.12").symlink_to(system_python)
     venv_python.symlink_to("python3.12")
-    monkeypatch.setattr(module, "_venv_python", lambda _ext: venv_python)
+    monkeypatch.setattr(module, "_venv_python", lambda _ext, _system=None: venv_python)
     monkeypatch.setattr(module, "resolve_open3d_asset", lambda _ext: _real_open3d_asset(module))
     monkeypatch.setattr(module, "resolve_flash_attn_asset", lambda _ext: _real_flash_asset(module))
     monkeypatch.delenv("GLIBC_TUNABLES", raising=False)
@@ -293,31 +301,36 @@ def test_verified_assets_produce_only_pinned_dependency_commands(
     assert smoke_command[1:3] == ["-B", "-c"]
     assert "GLIBC_TUNABLES" not in smoke_kwargs["env"]
     assert result["flash_attn"] == {
-        "path": str(FLASH_WHEEL),
+        "source": "verified-local-wheel",
+        "requirement": str(FLASH_WHEEL),
         "sha256": FLASH_SHA256,
         "version": "2.7.3",
     }
+    assert result["attention_backend"]["selected"] == "flash-attn"
 
 
 def test_flash_attention_smoke_executes_bf16_cuda_varlen_kernel_contract() -> None:
     module = load_setup_module()
-    smoke = module._smoke_script(ROOT)
+    smoke = module._smoke_script(
+        ROOT,
+        require_tls_launcher=True,
+        flash_version="2.7.3",
+        attention_backend="flash-attn",
+    )
     compile(smoke, "<sensenova-setup-smoke>", "exec")
 
     assert "from flash_attn import flash_attn_varlen_func" in smoke
-    assert "str(torch.__version__) == '2.7.0+cu128'" in smoke
-    assert "torch.version.cuda == '12.8'" in smoke
-    assert "torch.cuda.get_device_capability(0) == (12, 1)" in smoke
-    assert "flash_attn.__version__ == '2.7.3'" in smoke
-    assert "dtype=torch.bfloat16" in smoke
+    assert 'expected_attention_backend == "flash-attn"' in smoke
+    assert "expected_flash_version = '2.7.3'" in smoke
+    assert "torch.bfloat16" in smoke
     assert "for causal in (False, True)" in smoke
     assert "output.shape == q.shape" in smoke
     assert "torch.isfinite(output)" in smoke
     assert "glibc.rtld.optional_static_tls=262144" in smoke
-    assert "os.environ.get('GLIBC_TUNABLES', '')" in smoke
+    assert 'os.environ.get("GLIBC_TUNABLES", "")' in smoke
 
 
-def test_verified_lane_rejects_unverified_gpu_sm() -> None:
+def test_unverified_gpu_uses_sdpa_lane_instead_of_rejecting_setup() -> None:
     module = load_setup_module()
     config = module.SetupConfig(
         python_exe=Path(sys.executable),
@@ -325,18 +338,17 @@ def test_verified_lane_rejects_unverified_gpu_sm() -> None:
         gpu_sm=120,
         cuda_version=128,
     )
-    with pytest.raises(module.SetupError) as caught:
-        module.validate_lane(
-            config,
-            system="Linux",
-            machine="aarch64",
-            python_version=(3, 12),
-        )
-    assert caught.value.code == "unsupported-platform"
-    assert "requires SM 121" in str(caught.value)
+    lane = module.validate_lane(
+        config,
+        system="Linux",
+        machine="aarch64",
+        python_version=(3, 12),
+    )
+    assert lane["gpu_sm"] == 120
+    assert lane["id"] == "linux-aarch64/cp312/cu128"
 
 
-def test_main_keeps_stdout_empty_and_persists_actionable_missing_wheel_error(
+def test_main_keeps_stdout_empty_and_persists_actionable_setup_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -344,16 +356,12 @@ def test_main_keeps_stdout_empty_and_persists_actionable_missing_wheel_error(
     module = load_setup_module()
     extension = tmp_path / "extension"
     _copy_required_source(extension)
-    monkeypatch.setattr(module, "resolve_open3d_asset", lambda _ext: _real_open3d_asset(module))
-    original_run_setup = module.run_setup
+    monkeypatch.setattr(module, "SCRIPT_DIR", extension.resolve())
 
     def target_lane(config, logger):
-        return original_run_setup(
-            config,
-            logger,
-            system="Linux",
-            machine="aarch64",
-            python_version=(3, 12),
+        raise module.SetupError(
+            "FlashAttention is unavailable and the SDPA backend is disabled",
+            "attention-backend-unavailable",
         )
 
     monkeypatch.setattr(module, "run_setup", target_lane)
@@ -368,12 +376,12 @@ def test_main_keeps_stdout_empty_and_persists_actionable_missing_wheel_error(
     assert module.main([payload]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert "flash-attn-wheelhouse-missing" in captured.err
+    assert "attention-backend-unavailable" in captured.err
     status = json.loads(
         (extension / ".modly/setup/setup-status.json").read_text(encoding="utf-8")
     )
     assert status["status"] == "blocked"
-    assert status["error"]["code"] == "flash-attn-wheelhouse-missing"
+    assert status["error"]["code"] == "attention-backend-unavailable"
     assert status["model_weights"]["downloaded_by_setup"] is False
 
 
@@ -387,7 +395,7 @@ def test_docs_have_no_stale_flash_attention_blocker_language() -> None:
         "after setup is unblocked",
     ):
         assert stale not in readme
-    assert "**unblocked**" in readme
+    assert "sdpa" in readme
     assert "406,023,844" in readme or "406023844" in readme
     assert FLASH_WHEEL.name.casefold() in readme
     assert "source build" in readme

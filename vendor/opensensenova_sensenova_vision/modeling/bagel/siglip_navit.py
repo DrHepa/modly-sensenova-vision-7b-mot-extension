@@ -16,7 +16,7 @@ from torch import nn
 from transformers.activations import ACT2FN
 from modeling.siglip.configuration_siglip import SiglipVisionConfig as _SiglipVisionConfig
 from modeling.siglip.modeling_siglip import SiglipAttention, SiglipPreTrainedModel
-from flash_attn import flash_attn_varlen_func
+from .attention_backend import varlen_attention
 
 
 class SiglipVisionConfig(_SiglipVisionConfig):
@@ -230,7 +230,7 @@ class SiglipFlashAttention2(SiglipAttention):
             query_states = torch.cat([qh, qw], dim=-1)
             key_states = torch.cat([kh, kw], dim=-1)
 
-        attn_output = flash_attn_varlen_func(
+        attn_output = varlen_attention(
             query_states.to(torch.bfloat16),
             key_states.to(torch.bfloat16),
             value_states.to(torch.bfloat16),

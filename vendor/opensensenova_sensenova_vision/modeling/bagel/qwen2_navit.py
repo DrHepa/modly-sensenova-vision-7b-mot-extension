@@ -22,7 +22,7 @@ from torch.nn.attention.flex_attention import flex_attention
 from torch.nn.functional import scaled_dot_product_attention
 from transformers.utils import ModelOutput
 
-from flash_attn import flash_attn_varlen_func
+from .attention_backend import varlen_attention
 from modeling.qwen2.modeling_qwen2 import (
     Qwen2Attention,
     Qwen2MLP,
@@ -377,7 +377,7 @@ class PackedAttention(Qwen2Attention):
         cu_seqlens_q = torch.nn.functional.pad(torch.cumsum(query_lens, dim=0), (1, 0))
         cu_seqlens_k = torch.nn.functional.pad(torch.cumsum(key_values_lens, dim=0), (1, 0))
 
-        packed_attn_output = flash_attn_varlen_func(
+        packed_attn_output = varlen_attention(
             q=packed_query_states,
             k=merged_key_states,
             v=merged_value_states,
@@ -663,7 +663,7 @@ class PackedAttentionMoT(Qwen2Attention):
         cu_seqlens_q = torch.nn.functional.pad(torch.cumsum(query_lens, dim=0), (1, 0))
         cu_seqlens_k = torch.nn.functional.pad(torch.cumsum(key_values_lens, dim=0), (1, 0))
 
-        packed_attn_output = flash_attn_varlen_func(
+        packed_attn_output = varlen_attention(
             q=packed_query_states,
             k=merged_key_states,
             v=merged_value_states,

@@ -83,13 +83,13 @@
     },
     {
       "path": "modeling/bagel/qwen2_navit.py",
-      "sha256": "d72a1ce4b50df837f28e0eca5d442863929c2aff7ff312e2a78c6dffbcf03b57",
-      "size_bytes": 56638
+      "sha256": "82a5604d953e9dc31d031bdc9e36fb3d9ff71596db1902e7aa6fed0181f42ba6",
+      "size_bytes": 56628
     },
     {
       "path": "modeling/bagel/siglip_navit.py",
-      "sha256": "20916a17e97df5720457276d5aa459803d08f8d78abef25f845a71d4bfd6e7c1",
-      "size_bytes": 14996
+      "sha256": "2abbfedc50f037acb78fa3bf27529ed12c50f8e0449a5f5ed956e327e15542ad",
+      "size_bytes": 14992
     },
     {
       "path": "modeling/qwen2/__init__.py",
@@ -135,10 +135,15 @@
       "path": "LICENSE",
       "sha256": "43070e2d4e532684de521b885f385d0841030efa2b1a20bafb76133a5e1379c1",
       "size_bytes": 11356
+    },
+    {
+      "path": "modeling/bagel/attention_backend.py",
+      "sha256": "d8acd8f527a74a75b9bea633c7370643991c7173ef002a0473326dc46dcd653c",
+      "size_bytes": 17559
     }
   ],
   "schema_version": "modly.vendored-source.v1",
-  "selection": "Exact recursive local-Python import closure for the runtime entrypoint, plus the upstream license.",
+  "selection": "Exact recursive local-Python import closure for the runtime entrypoint, plus extension-side attention fallback and the upstream license.",
   "upstream": {
     "commit": "beea1f771b8192c597085c0e668f4430d2089d8d",
     "license": "Apache-2.0",

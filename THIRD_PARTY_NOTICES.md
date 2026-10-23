@@ -57,4 +57,4 @@ separately installed FlashAttention 2.8.3—and
 `flash_attn_varlen_func` passed BF16 CUDA causal and noncausal shape and
 finite-output checks.
 
-The wheel is approximately 406 MB and therefore is distributed as a custom GitHub Release asset, not as part of the Git source archive. The published asset must preserve the exact filename, byte size, SHA-256, BSD-3-Clause license, and author attribution recorded above. Users provision that verified asset at the documented local wheel path before Setup/Repair; setup does not download a substitute wheel or build FlashAttention from source.
+The wheel is approximately 406 MB and therefore is distributed as a custom GitHub Release asset, not as part of the Git source archive. The published asset must preserve the exact filename, byte size, SHA-256, BSD-3-Clause license, and author attribution recorded above. Setup uses the verified local wheel when present, or the same checksum-pinned release asset for the exact Linux selector lane; it never builds FlashAttention from source. Unsupported lanes, including Windows, use the separately authored PyTorch SDPA fallback and do not install this wheel.

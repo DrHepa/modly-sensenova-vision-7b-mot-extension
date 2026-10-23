@@ -14,7 +14,14 @@ runtime and
 3. Open the Modly Models UI and download the SenseNova model weights separately.
 4. Reload the extension registry, then add a node to a workflow.
 
-No manual FlashAttention wheel provisioning is required for the normal route. The audited Linux ARM64 wheel is an automatic fallback only for its matching selector lane. Setup may download Python packages or that fallback dependency, but it never downloads model weights.
+No manual FlashAttention wheel provisioning is required for the normal route. The audited Linux ARM64 wheel is selected only for its matching selector lane. Setup may download Python packages or that verified dependency, but it never downloads model weights.
+
+On Windows, Setup/Repair deliberately does **not** attempt to compile
+FlashAttention. The vendored Qwen and SigLIP packed-attention paths select the
+extension's PyTorch SDPA fallback instead, including variable-length and
+causal attention. A verified compatible FlashAttention installation remains
+preferred when one is available; Windows SDPA support is the generation path,
+not a placeholder that merely skips a dependency.
 
 If an older installation shows only the repository-folder name, no metadata, or zero nodes, reinstall from the latest `main` and run Setup/Repair again. Linking or copying a local repository does not prepare its Python environment.
 
@@ -120,9 +127,11 @@ SenseNova-Vision-7B-MoT requires a CUDA-capable GPU and the vendored runtime cur
 | --- | --- | --- |
 | Torch/Torchvision | pinned `2.7.0` / `0.22.0`; CUDA index selected from reported CUDA 11.8, 12.6, or 12.8, otherwise normal PyPI | none |
 | Open3D | `open3d==0.19.0` from pip | audited local Linux aarch64 CPython 3.12 wheel |
-| FlashAttention | upstream-pinned `flash-attn==2.6.3` pip build | audited `2.7.3` wheel only for Linux aarch64, CPython 3.12, the cu128 selector (reported CUDA 12.8 or newer), and SM121; native validation remains CUDA 12.8 only |
+| FlashAttention / packed attention | no source build on unsupported lanes; the vendored runtime uses PyTorch SDPA when no verified module is available | audited `2.7.3` wheel only for Linux aarch64, CPython 3.12, the cu128 selector (reported CUDA 12.8 or newer), and SM121; native validation remains CUDA 12.8 only |
 
-The only historical live lane is Linux aarch64, CPython 3.12, Torch `2.7.0+cu128`, CUDA 12.8, SM121. Windows and the other declared setup lanes remain unvalidated until tested on equivalent native hardware.
+The only historical live lane is Linux aarch64, CPython 3.12, Torch `2.7.0+cu128`, CUDA 12.8, SM121. Windows Setup/Repair and the extension-side SDPA dispatch contract are covered by offline tests, including packed noncausal and bottom-right causal paths. Those tests do **not** validate native Windows GPU generation, driver/runtime compatibility, model loading, or visual output.
+
+When Windows reports Modly `cuda_version=134` (CUDA 13.4), Setup/Repair intentionally selects the Torch `cu128` index and verifies the installed Torch build as CUDA 12.8. CUDA values above 12.8 use the same last-selected dependency lane; this is a packaging compatibility mapping, **not native CUDA 13.4 validation**.
 
 The exact vendored runtime source closure is hashed in `vendor/opensensenova_sensenova_vision/PROVENANCE.json`. Setup does not clone source code or model repositories.
 
@@ -146,11 +155,27 @@ Setup/Repair is transactional:
 
 Any install, smoke, status, or logging failure restores the previous environment. A later Setup/Repair also recovers an interrupted transaction. A failed first installation removes its partial `venv` instead of presenting it as ready.
 
-The normal FlashAttention route is `flash-attn==2.6.3 --no-build-isolation --no-deps` with pip. The audited `2.7.3` Linux aarch64 CPython 3.12 wheel is only a cu128-selector (reported CUDA 12.8 or newer)/SM121 fallback, validated natively only on CUDA 12.8, sourced locally when present or from the checksum-pinned v0.2.2 GitHub Release asset. Open3D likewise uses normal pip except for its exact audited Linux ARM64 wheel when available.
+The setup lane installs only a verified FlashAttention wheel when the exact
+audited Linux ARM64 CPython 3.12/cu128/SM121 selector matches. It never builds
+FlashAttention from source. Other lanes, including Windows, skip that
+dependency and record `sdpa` as the selected packed-attention backend. The
+extension-side fallback uses `torch.nn.functional.scaled_dot_product_attention`
+per packed sequence and preserves grouped-query, mask, causal, and BF16
+semantics. For a declared CUDA lane, the offline readiness smoke also verifies
+Torch's CUDA runtime version, `+cuNNN` wheel suffix, and
+`torch.cuda.is_available()` before selecting CUDA tensors. Open3D likewise uses normal pip except for its exact audited Linux
+ARM64 wheel when available.
 
-The executable `setup.py` is authoritative. The documentary `manifest.json` setup metadata still contains the superseded wheel-only policy; Modly does not consume that metadata to execute installation, and it requires a separate manifest cleanup.
+That verified Linux asset is
+`flash_attn-2.7.3-cp312-cp312-linux_aarch64.whl` (406,023,844 bytes); its
+SHA-256 and selector evidence are recorded in
+`flash-attn-wheelhouse.manifest.json`.
 
-The offline smoke imports Open3D, Torch, torchvision compiled operators, FlashAttention, and the vendored SenseNova runtime. CUDA kernels are exercised only when CUDA is actually available during setup; successful preparation alone is not a generation or hardware-support claim.
+The executable `setup.py` is authoritative. The documentary `manifest.json`
+records the verified-wheel selector and SDPA fallback for inspection; Modly does
+not consume that metadata to execute installation.
+
+The offline smoke imports Open3D, Torch, torchvision compiled operators, the selected attention backend, and the vendored SenseNova runtime. It exercises the packed SDPA path when selected and FlashAttention CUDA kernels only when that backend and CUDA are actually available during setup; successful preparation alone is not a generation or hardware-support claim.
 
 Setup downloads Python dependencies but never model weights, never calls model-loading download APIs, and never uses `apt`, `sudo`, or host package installation. Human-readable output goes to stderr. Durable evidence is written to `.modly/setup/logs/setup.log` and `.modly/setup/setup-status.json`.
 
@@ -166,9 +191,7 @@ On hosts that implement the extension-specific shared-owner fields, all nodes ma
 
 ### Source and setup validation
 
-Commit `8e5f045` passed source-only AST/import checks, all generated smoke-script variants, transactional rollback and crash-recovery scenarios, main success/failure ordering tests, and a fresh adversarial review. These checks used mocks and temporary directories; they did not install packages, access weights, or prove native execution on Windows.
-
-The older repository pytest suite is not currently all green: the latest offline run reported **61 passed, 6 failed**. Those six failures assert the superseded host-locked/wheel-only setup behavior. They must not be hidden or reported as a fully passing current suite.
+The current offline extension suite reports **70 passed, 3 skipped**. It covers source-only AST/import checks, generated smoke-script variants, transactional rollback and crash-recovery scenarios, Windows `cuda_version=134` → `cu128` selection without a FlashAttention source build, and packed SDPA noncausal plus bottom-right causal alignment. These checks use mocks and temporary directories; they do not install packages, access weights, or prove native execution on Windows.
 
 ### Live Modly validation
 
@@ -178,8 +201,11 @@ The unchanged v0.2.2 generator/runtime previously completed **15/15 live node ge
 
 - **Repository-folder name, no metadata, or zero nodes:** Modly is showing its incomplete/corrupted extension fallback. Inspect the setup log, then reinstall from the latest `main` if the copy predates commit `8e5f045`, and run Setup/Repair again.
 - **Setup failure:** inspect `.modly/setup/logs/setup.log` and `.modly/setup/setup-status.json`. A failed Repair restores the previous working `venv`; a failed clean installation remains incomplete until Setup/Repair succeeds.
-- **FlashAttention build failure:** the normal route builds pinned `flash-attn==2.6.3` through pip. Read the complete compiler/package error in the setup log; no universal Windows or x86_64 wheel is bundled.
-- **Exact Linux ARM64 fallback:** CPython 3.12 + the cu128 selector (reported CUDA 12.8 or newer) + SM121 may use the audited `flash-attn==2.7.3` wheel automatically after the normal route fails. Do not manually substitute an unrelated wheel.
+- **Windows FlashAttention message:** this is expected when Setup/Repair
+  records `attention_backend.selected` as `sdpa`; Windows does not run an
+  unverified FlashAttention source build. The vendored Qwen/SigLIP paths use
+  the tested extension-side SDPA fallback instead.
+- **Exact Linux ARM64 FlashAttention lane:** CPython 3.12 + the cu128 selector (reported CUDA 12.8 or newer) + SM121 may use the audited `flash-attn==2.7.3` wheel. Do not manually substitute an unrelated wheel.
 - **Missing weights:** use the Models UI and verify `checkpoint/ema.safetensors` in the model directory supplied for that node. The generator never falls back to a network cache.
 - **Missing reasoning sidecar:** `reasoning.txt` appears only when upstream returns non-empty intermediate text.
 - **Tagged text is unexpected:** open the primary `.txt` artifact or raw JSON sidecar; the extension intentionally preserves upstream output.

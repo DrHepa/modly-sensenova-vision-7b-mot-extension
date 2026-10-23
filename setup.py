@@ -31,6 +31,11 @@ TORCH_INDEX_URLS = {
     "cu126": "https://download.pytorch.org/whl/cu126",
     "cu128": "https://download.pytorch.org/whl/cu128",
 }
+TORCH_BUILD_CUDA_VERSIONS = {
+    "cu118": "11.8",
+    "cu126": "12.6",
+    "cu128": "12.8",
+}
 UPSTREAM_FLASH_ATTN_VERSION = "2.6.3"
 FLASH_ATTN_VERSION = "2.7.3"
 OPEN3D_VERSION = "0.19.0"
@@ -421,6 +426,12 @@ def _normalize_machine(value: str) -> str:
 
 
 def _torch_build(cuda_version: int) -> str:
+    # Modly encodes CUDA 13.4 as 134 on Windows.  There is no independently
+    # validated cu134 dependency lane here, so 134 (and newer reports) use the
+    # highest selected Torch wheel, cu128.  This is a packaging mapping, not a
+    # claim that a CUDA 13.x toolkit or native GPU path was validated.
+    if cuda_version == 134:
+        return "cu128"
     if cuda_version >= 128:
         return "cu128"
     if cuda_version >= 126:
@@ -729,8 +740,8 @@ def resolve_flash_attn_asset(ext_dir: Path) -> WheelAsset:
         "available for CPython 3.12, Linux aarch64, Torch 2.7.0+cu128, "
         "CUDA 12.8, and SM 121. The official SenseNova setup.sh reference to "
         f"flash-attn=={UPSTREAM_FLASH_ATTN_VERSION} remains recorded separately. "
-        "Restore the audited local wheel and its exact manifest evidence. Setup "
-        "will not build FlashAttention from source or download a replacement.",
+        "Setup will use the checksum-pinned release asset when the audited "
+        "local wheel is absent; it will not build FlashAttention from source.",
         "flash-attn-wheelhouse-missing",
     )
 
@@ -840,8 +851,12 @@ def _install_python_launcher(venv_python: Path) -> None:
 def _smoke_script(
     ext_dir: Path,
     *,
-    require_tls_launcher: bool,
-    flash_version: str,
+    require_tls_launcher: bool = False,
+    flash_version: str | None = None,
+    attention_backend: str = "sdpa",
+    torch_build: str = "pypi",
+    cuda_version: int = 0,
+    accelerator: str = "unknown",
 ) -> str:
     vendor = ext_dir / "vendor" / "opensensenova_sensenova_vision"
     return f"""
@@ -866,20 +881,100 @@ sys.path.insert(0, {str(vendor)!r})
 open3d = importlib.import_module("open3d")
 torch = importlib.import_module("torch")
 torchvision = importlib.import_module("torchvision")
-flash_attn = importlib.import_module("flash_attn")
 runtime = importlib.import_module("inference.sensenova_vision")
+attention = importlib.import_module("modeling.bagel.attention_backend")
 
 assert Path(runtime.__file__).resolve().is_relative_to(Path({str(vendor)!r}).resolve())
 assert open3d.__version__ == {OPEN3D_VERSION!r}
-assert str(torch.__version__).split("+", 1)[0] == {TORCH_VERSION!r}
+torch_version = str(torch.__version__)
+assert torch_version.split("+", 1)[0] == {TORCH_VERSION!r}
 assert metadata.version("torchvision").split("+", 1)[0] == {TORCHVISION_VERSION!r}
 assert torchvision.extension._has_ops(), "torchvision compiled operators are unavailable"
-assert metadata.version("flash-attn") == {flash_version!r}
+expected_attention_backend = {attention_backend!r}
+expected_flash_version = {flash_version!r}
+expected_torch_build = {torch_build!r}
+expected_cuda_version = {cuda_version!r}
+expected_accelerator = {accelerator!r}
+expected_cuda_runtime = {TORCH_BUILD_CUDA_VERSIONS.get(torch_build)!r}
+requires_cuda = expected_accelerator == "cuda" or expected_cuda_version > 0
 cuda_available = bool(torch.cuda.is_available())
+if expected_cuda_runtime is not None:
+    assert torch.version.cuda == expected_cuda_runtime, (
+        "Installed Torch CUDA runtime does not match the selected "
+        f"{{expected_torch_build}} lane: {{torch.version.cuda!r}}"
+    )
+    assert f"+{{expected_torch_build}}" in torch_version, (
+        "Installed Torch version does not carry the selected CUDA wheel suffix: "
+        f"{{torch_version}}"
+    )
+if requires_cuda:
+    assert torch.version.cuda is not None, "CUDA lane requires a CUDA-enabled Torch build"
+    assert cuda_available, "CUDA lane requires torch.cuda.is_available()"
+assert attention.get_attention_backend() == expected_attention_backend
+if expected_flash_version is not None:
+    assert metadata.version("flash-attn") == expected_flash_version
+
+# Exercise the extension-side packed SDPA path even on a host without CUDA.
+if expected_attention_backend == "sdpa":
+    torch.manual_seed(0)
+    sdpa_device = "cuda" if cuda_available else "cpu"
+    sdpa_dtype = torch.bfloat16 if sdpa_device == "cuda" else torch.float32
+    sdpa_q = torch.randn((5, 2, 8), dtype=sdpa_dtype, device=sdpa_device)
+    sdpa_k = torch.randn((7, 1, 8), dtype=sdpa_dtype, device=sdpa_device)
+    sdpa_v = torch.randn((7, 1, 8), dtype=sdpa_dtype, device=sdpa_device)
+    sdpa_cu_q = torch.tensor([0, 2, 5], dtype=torch.int32, device=sdpa_device)
+    sdpa_cu_k = torch.tensor([0, 3, 7], dtype=torch.int32, device=sdpa_device)
+    sdpa_output = attention.varlen_attention(
+        q=sdpa_q,
+        k=sdpa_k,
+        v=sdpa_v,
+        cu_seqlens_q=sdpa_cu_q,
+        cu_seqlens_k=sdpa_cu_k,
+        max_seqlen_q=3,
+        max_seqlen_k=4,
+        causal=False,
+        backend="sdpa",
+    )
+    assert sdpa_output.shape == sdpa_q.shape
+    assert bool(torch.isfinite(sdpa_output).all().item())
+
+    # Exercise FlashAttention's bottom-right causal alignment through the
+    # extension fallback with unequal packed query/key lengths.
+    causal_q = torch.ones((2, 1, 1), dtype=sdpa_dtype, device=sdpa_device)
+    causal_k = torch.arange(1, 5, dtype=sdpa_dtype, device=sdpa_device).reshape(4, 1, 1)
+    causal_v = (10 * torch.arange(1, 5, dtype=sdpa_dtype, device=sdpa_device)).reshape(4, 1, 1)
+    causal_cu_q = torch.tensor([0, 2], dtype=torch.int32, device=sdpa_device)
+    causal_cu_k = torch.tensor([0, 4], dtype=torch.int32, device=sdpa_device)
+    causal_output = attention.varlen_attention(
+        q=causal_q,
+        k=causal_k,
+        v=causal_v,
+        cu_seqlens_q=causal_cu_q,
+        cu_seqlens_k=causal_cu_k,
+        max_seqlen_q=2,
+        max_seqlen_k=4,
+        causal=True,
+        backend="sdpa",
+    )
+    causal_allowed = torch.tensor(
+        [[True, True, True, False], [True, True, True, True]],
+        dtype=torch.bool,
+        device=sdpa_device,
+    )
+    causal_reference = torch.nn.functional.scaled_dot_product_attention(
+        causal_q.transpose(0, 1).unsqueeze(0),
+        causal_k.transpose(0, 1).unsqueeze(0),
+        causal_v.transpose(0, 1).unsqueeze(0),
+        attn_mask=causal_allowed.unsqueeze(0).unsqueeze(0),
+        is_causal=False,
+    ).squeeze(0).transpose(0, 1)
+    assert causal_output.shape == causal_q.shape
+    assert torch.allclose(causal_output, causal_reference, rtol=1e-2, atol=1e-2)
+
 capability = None
 dtype = None
 kernel_checks = {{"status": "not-run"}}
-if cuda_available:
+if cuda_available and expected_attention_backend == "flash-attn":
     capability = list(torch.cuda.get_device_capability(0))
     dtype = (
         torch.bfloat16
@@ -919,7 +1014,10 @@ print(json.dumps({{
     "gpu_capability": capability,
     "flash_dtype": str(dtype) if dtype is not None else None,
     "flash_kernel": kernel_checks,
-    "flash_attn": metadata.version("flash-attn"),
+    "flash_attn": (
+        metadata.version("flash-attn") if expected_attention_backend == "flash-attn" else None
+    ),
+    "attention_backend": expected_attention_backend,
     "runtime": str(Path(runtime.__file__).resolve()),
 }}, sort_keys=True))
 """
@@ -997,26 +1095,31 @@ def run_setup(
     )
 
     flash_asset: WheelAsset | None = None
-    flash_fallback_requirement: str | None = None
-    flash_fallback_source: str | None = None
+    flash_requirement: str | None = None
+    flash_source = "not-installed"
+    flash_version: str | None = None
+    attention_backend = "sdpa"
     if exact_flash_lane:
         try:
             flash_asset = resolve_flash_attn_asset(config.ext_dir)
         except SetupError as exc:
             logger.info(
-                "Optional local FlashAttention fallback is unavailable; "
-                f"the checksum-pinned release fallback remains available: {exc}"
+                "Optional local FlashAttention wheel is unavailable; "
+                f"using the checksum-pinned release asset: {exc}"
             )
         if flash_asset is not None:
-            flash_fallback_requirement = str(flash_asset.path)
-            flash_fallback_source = "verified-local-wheel"
+            flash_requirement = str(flash_asset.path)
+            flash_source = "verified-local-wheel"
         else:
-            flash_fallback_requirement = FLASH_ATTN_ARM64_RELEASE_URL
-            flash_fallback_source = "verified-release-wheel"
-
-    flash_requirement = f"flash-attn=={UPSTREAM_FLASH_ATTN_VERSION}"
-    flash_source = "pip"
-    flash_version = UPSTREAM_FLASH_ATTN_VERSION
+            flash_requirement = FLASH_ATTN_ARM64_RELEASE_URL
+            flash_source = "verified-release-wheel"
+        flash_version = FLASH_ATTN_VERSION
+        attention_backend = "flash-attn"
+    else:
+        logger.info(
+            "No verified FlashAttention wheel matches this lane; "
+            "using the extension-side PyTorch SDPA backend"
+        )
 
     venv_dir = config.ext_dir / "venv"
     venv_python = _venv_python(config.ext_dir, lane["os"])
@@ -1062,30 +1165,10 @@ def run_setup(
     _run_command([*pip, *RUNTIME_REQUIREMENTS], logger, runner=runner)
     _run_command([*pip, open3d_requirement], logger, runner=runner)
 
-    flash_command = [
-        *pip,
-        "--no-build-isolation",
-        "--no-deps",
-        flash_requirement,
-    ]
-    flash_env = dict(os.environ)
-    flash_env.setdefault("MAX_JOBS", "4")
-    try:
-        _run_command(flash_command, logger, runner=runner, env=flash_env)
-    except SetupError as primary_error:
-        if flash_fallback_requirement is None or flash_fallback_source is None:
-            raise
-        logger.info(
-            "The normal pinned FlashAttention install failed; "
-            f"using the exact verified fallback: {primary_error}"
-        )
-        flash_requirement = flash_fallback_requirement
-        flash_source = flash_fallback_source
-        flash_version = FLASH_ATTN_VERSION
+    if flash_requirement is not None:
         _run_command(
             [
                 *pip,
-                "--force-reinstall",
                 "--no-deps",
                 flash_requirement,
             ],
@@ -1117,6 +1200,10 @@ def run_setup(
                     config.ext_dir,
                     require_tls_launcher=require_tls_launcher,
                     flash_version=flash_version,
+                    attention_backend=attention_backend,
+                    torch_build=lane["torch_build"],
+                    cuda_version=config.cuda_version,
+                    accelerator=lane["accelerator"],
                 ),
             ],
             logger,
@@ -1124,38 +1211,7 @@ def run_setup(
             env=smoke_env,
         )
 
-    try:
-        run_smoke()
-    except SetupError as smoke_error:
-        if (
-            flash_source != "pip"
-            or flash_fallback_requirement is None
-            or flash_fallback_source is None
-        ):
-            raise
-        logger.info(
-            "The normal FlashAttention install failed native readiness; "
-            f"using the exact verified fallback: {smoke_error}"
-        )
-        flash_requirement = flash_fallback_requirement
-        flash_source = flash_fallback_source
-        flash_version = FLASH_ATTN_VERSION
-        _run_command(
-            [
-                *pip,
-                "--force-reinstall",
-                "--no-deps",
-                flash_requirement,
-            ],
-            logger,
-            runner=runner,
-        )
-        _run_command(
-            [str(venv_python), "-m", "pip", "check"],
-            logger,
-            runner=runner,
-        )
-        run_smoke()
+    run_smoke()
     return {
         "lane": lane,
         "venv_python": str(venv_python),
@@ -1178,6 +1234,11 @@ def run_setup(
                 else None
             ),
             "version": flash_version,
+        },
+        "attention_backend": {
+            "selected": attention_backend,
+            "fallback": "torch.nn.functional.scaled_dot_product_attention",
+            "flash_attn_available": flash_requirement is not None,
         },
         "model_weights_downloaded": False,
     }
@@ -1291,4 +1352,3 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
